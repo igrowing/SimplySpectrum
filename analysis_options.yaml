@@ -1,0 +1,18 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+
+linter:
+  rules:
+    lines_longer_than_80_chars: true
+    # very_good_analysis is designed for publishable packages, where every
+    # public member (including each constructor parameter) needs API docs
+    # for pub.dev consumers. This app is private (`publish_to: none`) and
+    # has no external API surface, so per-parameter doc comments on widgets
+    # and view-model constructors are low-value noise rather than
+    # documentation that helps future maintainers. Class-level and
+    # non-trivial member docs are still written throughout the codebase.
+    public_member_api_docs: false
