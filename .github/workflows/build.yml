@@ -147,14 +147,14 @@ jobs:
       - name: Upload arm64 APK (primary — covers 99%+ of modern devices)
         uses: actions/upload-artifact@v4
         with:
-          name: SimplyNet-${{ steps.version.outputs.version_name }}-arm64-${{ steps.version.outputs.safe_branch }}
+          name: SimplySpectrum-${{ steps.version.outputs.version_name }}-arm64-${{ steps.version.outputs.safe_branch }}
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           retention-days: 30
 
       - name: Upload universal APK (fallback)
         uses: actions/upload-artifact@v4
         with:
-          name: SimplyNet-${{ steps.version.outputs.version_name }}-universal-${{ steps.version.outputs.safe_branch }}
+          name: SimplySpectrum-${{ steps.version.outputs.version_name }}-universal-${{ steps.version.outputs.safe_branch }}
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
@@ -243,6 +243,6 @@ jobs:
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: SimplyNet-${{ steps.version.outputs.version_name }}-aab
+          name: SimplySpectrum-${{ steps.version.outputs.version_name }}-aab
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 90
