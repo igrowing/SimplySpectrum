@@ -8,8 +8,7 @@ void main() {
 
       expect(settings.detectColorPeaks, isTrue);
       expect(settings.spectrumUnit, SpectrumUnit.wavelengthNm);
-      expect(settings.showBrightestPoint, isFalse);
-      expect(settings.showDarkestPoint, isFalse);
+      expect(settings.showExtremeLightSpots, isFalse);
       expect(settings.enhanceColors, isFalse);
     });
 

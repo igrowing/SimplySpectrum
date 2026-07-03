@@ -29,8 +29,7 @@ void main() {
       const settings = AppSettings(
         detectColorPeaks: false,
         spectrumUnit: SpectrumUnit.frequencyHz,
-        showBrightestPoint: true,
-        showDarkestPoint: true,
+        showExtremeLightSpots: true,
         enhanceColors: true,
       );
 
@@ -38,6 +37,20 @@ void main() {
       final reloaded = await repository.load();
 
       expect(reloaded, settings);
+    });
+
+    test('load() migrates the legacy brightest/darkest point keys', () async {
+      SharedPreferences.setMockInitialValues({
+        'settings.show_brightest_point': true,
+        'settings.show_darkest_point': false,
+      });
+      final repository = SettingsRepositoryImpl(
+        logger: const DeveloperAppLogger(),
+      );
+
+      final settings = await repository.load();
+
+      expect(settings.showExtremeLightSpots, isTrue);
     });
   });
 }

@@ -47,6 +47,14 @@ class SimplySpectrumApp extends StatelessWidget {
         title: 'SimplySpectrum',
         debugShowCheckedModeBanner: false,
         theme: ThemeData.dark(useMaterial3: true),
+        // Applied globally (rather than per-screen) so every route -
+        // including pushed info/settings screens - stays clear of the
+        // Android status bar and, importantly, the gesture/3-button
+        // navigation bar, which the OS otherwise draws on top of the
+        // app's edge-to-edge content. See igrowing/SimplyNet for the
+        // same pattern.
+        builder: (_, child) =>
+            SafeArea(child: child ?? const SizedBox.shrink()),
         home: const HomePage(),
       ),
     );

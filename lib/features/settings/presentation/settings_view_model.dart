@@ -60,11 +60,8 @@ class SettingsViewModel extends ChangeNotifier {
   Future<void> setSpectrumUnit(SpectrumUnit value) =>
       _update((s) => s.copyWith(spectrumUnit: value));
 
-  Future<void> setShowBrightestPoint(bool value) =>
-      _update((s) => s.copyWith(showBrightestPoint: value));
-
-  Future<void> setShowDarkestPoint(bool value) =>
-      _update((s) => s.copyWith(showDarkestPoint: value));
+  Future<void> setShowExtremeLightSpots(bool value) =>
+      _update((s) => s.copyWith(showExtremeLightSpots: value));
 
   Future<void> setEnhanceColors(bool value) =>
       _update((s) => s.copyWith(enhanceColors: value));

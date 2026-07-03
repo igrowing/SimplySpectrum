@@ -23,6 +23,11 @@ class CameraRepositoryImpl implements CameraRepository {
   List<plugin.CameraDescription> _availableCameras = [];
   CameraLensDirection? _currentLens;
   bool _isTorchOn = false;
+
+  /// The plugin's description for the currently-open lens, kept around so
+  /// each frame can be tagged with the sensor orientation/facing needed to
+  /// map raw sample coordinates onto what `CameraPreview` actually shows.
+  plugin.CameraDescription? _activeDescription;
   final StreamController<RawCameraFrame> _frameStreamController =
       StreamController<RawCameraFrame>.broadcast();
 
@@ -65,7 +70,31 @@ class CameraRepositoryImpl implements CameraRepository {
 
   Future<void> _open(CameraLensDirection lens) async {
     final description = _describeFor(lens);
+
+    // Fully release the previous camera session BEFORE opening the new
+    // one. Most phones only support a single open Camera2 session per
+    // process: creating the new controller first (as this used to do)
+    // could make the platform preempt/close the still-active previous
+    // session out from under it, so if the new controller's own
+    // initialize()/startImageStream() then failed (or merely raced the
+    // teardown), `_controller` was left pointing at a controller whose
+    // native session was already dead - a black, frozen preview that no
+    // further switchLens() call could recover, since the "previous"
+    // camera was gone too. Disposing first means there is a brief gap
+    // with no live preview, but every subsequent open starts clean.
     final previous = _controller;
+    _controller = null;
+    _activeDescription = null;
+    if (previous != null) {
+      try {
+        if (previous.value.isStreamingImages) {
+          await previous.stopImageStream();
+        }
+      } on Object catch (error) {
+        _logger.warning('Ignoring stopImageStream error: $error');
+      }
+      await previous.dispose();
+    }
 
     final newController = plugin.CameraController(
       description,
@@ -84,14 +113,12 @@ class CameraRepositoryImpl implements CameraRepository {
         stackTrace: stackTrace,
       );
       await newController.dispose();
+      _currentLens = null;
       throw CameraFailure('Unable to start camera on $lens lens: $error');
     }
 
-    if (previous != null) {
-      await previous.dispose();
-    }
-
     _controller = newController;
+    _activeDescription = description;
     _currentLens = lens;
     _isTorchOn = false;
   }
@@ -126,6 +153,9 @@ class CameraRepositoryImpl implements CameraRepository {
       width: image.width,
       height: image.height,
       format: RawFrameFormat.yuv420,
+      sensorOrientationDegrees: _activeDescription?.sensorOrientation ?? 0,
+      isFrontFacing:
+          _activeDescription?.lensDirection == plugin.CameraLensDirection.front,
       planes: image.planes
           .map(
             (plane) => RawFramePlane(

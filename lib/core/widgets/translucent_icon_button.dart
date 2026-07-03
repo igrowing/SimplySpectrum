@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 /// The small half-transparent circular icon button used for camera
-/// controls (swap/light/snapshot) and the sector "info" buttons, matching
-/// the familiar overlay-button look of most camera apps.
+/// controls (swap/light/snapshot), the Controls sector's smaller toggles,
+/// and the sector "info" buttons, matching the familiar overlay-button
+/// look of most camera apps.
 class TranslucentIconButton extends StatelessWidget {
   const TranslucentIconButton({
     required this.icon,
@@ -10,6 +11,8 @@ class TranslucentIconButton extends StatelessWidget {
     required this.semanticLabel,
     super.key,
     this.isActive = false,
+    this.iconSize = 22,
+    this.padding = const EdgeInsets.all(10),
   });
 
   final IconData icon;
@@ -20,6 +23,14 @@ class TranslucentIconButton extends StatelessWidget {
   /// state (e.g. torch enabled).
   final bool isActive;
 
+  /// Icon glyph size. Defaults to the "large" size used for the primary
+  /// camera controls; pass a smaller value for secondary toggles.
+  final double iconSize;
+
+  /// Padding around the icon, shrinking the tappable circle to match a
+  /// smaller [iconSize] when needed.
+  final EdgeInsetsGeometry padding;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -29,11 +40,11 @@ class TranslucentIconButton extends StatelessWidget {
         customBorder: const CircleBorder(),
         onTap: onPressed,
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: padding,
           child: Icon(
             icon,
             color: isActive ? Colors.black : Colors.white,
-            size: 22,
+            size: iconSize,
             semanticLabel: semanticLabel,
           ),
         ),

@@ -45,6 +45,8 @@ class RawCameraFrame extends Equatable {
     required this.height,
     required this.format,
     required this.planes,
+    this.sensorOrientationDegrees = 0,
+    this.isFrontFacing = false,
   });
 
   final int width;
@@ -55,6 +57,26 @@ class RawCameraFrame extends Equatable {
   /// For [RawFrameFormat.bgra8888]: a single packed plane.
   final List<RawFramePlane> planes;
 
+  /// Degrees the raw buffer must be rotated clockwise to match what the
+  /// platform's rotated preview widget displays (Android's
+  /// `CameraDescription.sensorOrientation`, one of 0/90/180/270). The
+  /// image stream always delivers frames in the sensor's native,
+  /// unrotated orientation regardless of this value, so any point
+  /// computed from raw sample coordinates must be rotated by this
+  /// amount before it can be overlaid on the displayed preview.
+  final int sensorOrientationDegrees;
+
+  /// Whether this frame came from the front (selfie) lens, whose preview
+  /// is mirrored horizontally relative to the raw sensor buffer.
+  final bool isFrontFacing;
+
   @override
-  List<Object?> get props => [width, height, format, planes];
+  List<Object?> get props => [
+    width,
+    height,
+    format,
+    planes,
+    sensorOrientationDegrees,
+    isFrontFacing,
+  ];
 }

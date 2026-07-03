@@ -8,9 +8,35 @@ const double _kSpeedOfLightMPerS = 3e8;
 
 double nmToHz(double nm) => _kSpeedOfLightMPerS / (nm * 1e-9);
 
+/// Frequency (Hz) at the short/violet end of the visible range - the
+/// highest frequency in-range, reached at [kMinVisibleWavelengthNm].
+final double _kMaxVisibleHz = nmToHz(kMinVisibleWavelengthNm);
+
+/// Frequency (Hz) at the long/red end of the visible range - the lowest
+/// frequency in-range, reached at [kMaxVisibleWavelengthNm].
+final double _kMinVisibleHz = nmToHz(kMaxVisibleWavelengthNm);
+
+/// A peak label placement candidate: its anchor point (the peak marker)
+/// and the pre-laid-out text ready to paint.
+class _PeakLabel {
+  _PeakLabel({required this.x, required this.y, required this.painter});
+
+  final double x;
+  final double y;
+  final TextPainter painter;
+}
+
 /// Draws the live Spectrum sector chart: white polyline histogram on a
 /// black background with a grey grid, a static 400-700nm color reference
 /// bar with tick marks, and optional peak labels.
+///
+/// The X axis genuinely rescales with [unit]: in wavelength mode it is
+/// linear in nm (as the histogram bins are stored); in frequency mode
+/// every plotted position - grid, histogram, peaks, color bar and ticks
+/// alike - is remapped so it is linear in Hz instead. Since frequency is
+/// inversely proportional to wavelength, this is a genuinely different
+/// (non-uniform, in bin-index terms) horizontal scale, not just a
+/// relabeling of the same fixed tick positions.
 class SpectrumChartPainter extends CustomPainter {
   SpectrumChartPainter({
     required this.histogram,
@@ -25,6 +51,11 @@ class SpectrumChartPainter extends CustomPainter {
   static const double _colorBarHeight = 18;
   static const double _tickLabelHeight = 16;
 
+  /// Minimum horizontal/vertical separation (px) enforced between peak
+  /// labels so nearby peaks don't render on top of each other.
+  static const double _minLabelDx = 89;
+  static const double _minLabelDy = 16;
+
   @override
   void paint(Canvas canvas, Size size) {
     final plotHeight = size.height - _colorBarHeight - _tickLabelHeight;
@@ -38,6 +69,20 @@ class SpectrumChartPainter extends CustomPainter {
     }
     _drawColorBar(canvas, size, plotHeight);
     _drawTicks(canvas, size, plotHeight);
+  }
+
+  /// Fraction (0-1, left-to-right) of the X axis a given wavelength maps
+  /// to, under the currently selected [unit]. Wavelength mode is linear
+  /// in nm; frequency mode is linear in Hz - so a peak near 700nm sits
+  /// much closer to its neighbors in frequency mode than in wavelength
+  /// mode, since Hz changes slowly with nm at the red end.
+  double _xFraction(double nm) {
+    if (unit == SpectrumUnit.wavelengthNm) {
+      return (nm - kMinVisibleWavelengthNm) /
+          (kMaxVisibleWavelengthNm - kMinVisibleWavelengthNm);
+    }
+    final hz = nmToHz(nm);
+    return (_kMaxVisibleHz - hz) / (_kMaxVisibleHz - _kMinVisibleHz);
   }
 
   void _drawGrid(Canvas canvas, Rect rect) {
@@ -67,12 +112,15 @@ class SpectrumChartPainter extends CustomPainter {
     if (maxCount == 0) return;
 
     final path = Path();
+    var started = false;
     for (var i = 0; i < histogram.bins.length; i++) {
-      final x = rect.left + rect.width * i / (histogram.bins.length - 1);
+      final nm = kMinVisibleWavelengthNm + i;
+      final x = rect.left + rect.width * _xFraction(nm);
       final normalized = histogram.bins[i] / maxCount;
       final y = rect.bottom - normalized * rect.height;
-      if (i == 0) {
+      if (!started) {
         path.moveTo(x, y);
+        started = true;
       } else {
         path.lineTo(x, y);
       }
@@ -92,30 +140,71 @@ class SpectrumChartPainter extends CustomPainter {
     if (maxCount == 0) return;
 
     final peaks = histogram.detectPeaks();
-    for (final peak in peaks) {
-      final binIndex = (peak.wavelengthNm - kMinVisibleWavelengthNm).round();
-      final x = rect.left + rect.width * binIndex / (histogram.bins.length - 1);
-      final normalized = peak.occurrences / maxCount;
-      final y = rect.bottom - normalized * rect.height;
+    if (peaks.isEmpty) return;
 
-      canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = Colors.amber);
-
-      final label = _labelFor(peak.wavelengthNm);
-      final painter = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: const TextStyle(color: Colors.amber, fontSize: 9),
+    final candidates = <_PeakLabel>[
+      for (final peak in peaks)
+        _PeakLabel(
+          x: rect.left + rect.width * _xFraction(peak.wavelengthNm),
+          y: rect.bottom - (peak.occurrences / maxCount) * rect.height,
+          painter: TextPainter(
+            text: TextSpan(
+              text: _labelFor(peak.wavelengthNm),
+              style: const TextStyle(color: Colors.amber, fontSize: 9),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout(),
         ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      final labelX = (x - painter.width / 2).clamp(
+    ];
+
+    // Markers always sit exactly on the detected peak, regardless of
+    // where its label ends up.
+    for (final candidate in candidates) {
+      canvas.drawCircle(
+        Offset(candidate.x, candidate.y),
+        2.5,
+        Paint()..color = Colors.amber,
+      );
+    }
+
+    // Place the topmost (highest-occurrence) peak's label first, at its
+    // natural spot; each subsequent label - processed from topmost to
+    // lowest - is nudged further above its marker until it clears the
+    // minimum separation from every label already placed, so a cluster
+    // of nearby peaks fans out into a readable vertical stack instead of
+    // overlapping into unreadable text.
+    final ordered = List<_PeakLabel>.from(candidates)
+      ..sort((a, b) => a.y.compareTo(b.y));
+    final placed = <Rect>[];
+
+    for (final candidate in ordered) {
+      final labelX = (candidate.x - candidate.painter.width / 2).clamp(
         0.0,
-        rect.width - painter.width,
+        rect.width - candidate.painter.width,
       );
-      painter.paint(
-        canvas,
-        Offset(labelX, (y - painter.height - 3).clamp(0, rect.height)),
+      var labelY = candidate.y - candidate.painter.height - 3;
+
+      var attempts = 0;
+      while (attempts < 30 &&
+          placed.any(
+            (existing) =>
+                (existing.left - labelX).abs() < _minLabelDx &&
+                (existing.top - labelY).abs() < _minLabelDy,
+          )) {
+        labelY -= _minLabelDy;
+        attempts++;
+      }
+      labelY = labelY.clamp(0.0, rect.height - candidate.painter.height);
+
+      placed.add(
+        Rect.fromLTWH(
+          labelX,
+          labelY,
+          candidate.painter.width,
+          candidate.painter.height,
+        ),
       );
+      candidate.painter.paint(canvas, Offset(labelX, labelY));
     }
   }
 
@@ -131,13 +220,17 @@ class SpectrumChartPainter extends CustomPainter {
     final barRect = Rect.fromLTWH(0, top, size.width, _colorBarHeight);
     const columns = 150;
     for (var i = 0; i < columns; i++) {
-      final t = i / (columns - 1);
-      final nm =
+      final t0 = i / columns;
+      final t1 = (i + 1) / columns;
+      final nm0 =
           kMinVisibleWavelengthNm +
-          t * (kMaxVisibleWavelengthNm - kMinVisibleWavelengthNm);
-      final rgb = wavelengthToRgb(nm);
-      final x0 = barRect.left + barRect.width * i / columns;
-      final x1 = barRect.left + barRect.width * (i + 1) / columns;
+          t0 * (kMaxVisibleWavelengthNm - kMinVisibleWavelengthNm);
+      final nm1 =
+          kMinVisibleWavelengthNm +
+          t1 * (kMaxVisibleWavelengthNm - kMinVisibleWavelengthNm);
+      final rgb = wavelengthToRgb(nm0);
+      final x0 = barRect.left + barRect.width * _xFraction(nm0);
+      final x1 = barRect.left + barRect.width * _xFraction(nm1);
       canvas.drawRect(
         Rect.fromLTRB(x0, barRect.top, x1, barRect.bottom),
         Paint()..color = Color.fromARGB(255, rgb[0], rgb[1], rgb[2]),
@@ -147,20 +240,16 @@ class SpectrumChartPainter extends CustomPainter {
 
   void _drawTicks(Canvas canvas, Size size, double colorBarTop) {
     final y = colorBarTop + _colorBarHeight + 2;
-    const stepNm = 100.0;
-    var nm = kMinVisibleWavelengthNm;
-    while (nm <= kMaxVisibleWavelengthNm + 0.01) {
-      final t =
-          (nm - kMinVisibleWavelengthNm) /
-          (kMaxVisibleWavelengthNm - kMinVisibleWavelengthNm);
-      final x = size.width * t;
-      final label = unit == SpectrumUnit.wavelengthNm
-          ? '${nm.round()}'
-          : (nmToHz(nm) / 1e14).toStringAsFixed(1);
 
+    final ticks = unit == SpectrumUnit.wavelengthNm
+        ? _wavelengthTicks()
+        : _frequencyTicks();
+
+    for (final tick in ticks) {
+      final x = size.width * tick.fraction;
       final painter = TextPainter(
         text: TextSpan(
-          text: label,
+          text: tick.label,
           style: const TextStyle(color: Colors.white54, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
@@ -170,8 +259,35 @@ class SpectrumChartPainter extends CustomPainter {
         size.width - painter.width,
       );
       painter.paint(canvas, Offset(labelX, y));
+    }
+  }
+
+  /// Wavelength-mode ticks: fixed 100nm steps from 400 to 700nm, at the
+  /// (nm-linear) X position each value naturally falls on.
+  List<({double fraction, String label})> _wavelengthTicks() {
+    final ticks = <({double fraction, String label})>[];
+    const stepNm = 100.0;
+    var nm = kMinVisibleWavelengthNm;
+    while (nm <= kMaxVisibleWavelengthNm + 0.01) {
+      ticks.add((fraction: _xFraction(nm), label: '${nm.round()}'));
       nm += stepNm;
     }
+    return ticks;
+  }
+
+  /// Frequency-mode ticks: 5 values evenly spaced across the Hz range
+  /// (~7.5e14 down to ~4.3e14), so - unlike relabeling the wavelength
+  /// ticks in place - both the tick values *and* their spacing reflect a
+  /// genuine linear-in-Hz axis.
+  List<({double fraction, String label})> _frequencyTicks() {
+    const divisions = 4;
+    final ticks = <({double fraction, String label})>[];
+    for (var i = 0; i <= divisions; i++) {
+      final fraction = i / divisions;
+      final hz = _kMaxVisibleHz - fraction * (_kMaxVisibleHz - _kMinVisibleHz);
+      ticks.add((fraction: fraction, label: (hz / 1e14).toStringAsFixed(1)));
+    }
+    return ticks;
   }
 
   @override

@@ -3,13 +3,12 @@ import 'package:equatable/equatable.dart';
 /// Which unit the Spectrum sector's X axis and color labels use.
 enum SpectrumUnit { wavelengthNm, frequencyHz }
 
-/// User-configurable, persisted app settings (Settings sector).
+/// User-configurable, persisted app settings (Settings screen).
 class AppSettings extends Equatable {
   const AppSettings({
     this.detectColorPeaks = true,
     this.spectrumUnit = SpectrumUnit.wavelengthNm,
-    this.showBrightestPoint = false,
-    this.showDarkestPoint = false,
+    this.showExtremeLightSpots = false,
     this.enhanceColors = false,
   });
 
@@ -21,13 +20,10 @@ class AppSettings extends Equatable {
   /// Spectrum sector. Default: wavelength.
   final SpectrumUnit spectrumUnit;
 
-  /// Draw a black 2px-wide circle over the brightest >=20 sq. px area of
-  /// the camera preview. Default: disabled.
-  final bool showBrightestPoint;
-
-  /// Draw a white 2px-wide circle over the darkest >=20 sq. px area of the
-  /// camera preview. Default: disabled.
-  final bool showDarkestPoint;
+  /// Draw a black 2px-wide circle over the brightest, and a white 2px-wide
+  /// circle over the darkest, >=20 sq. px area of the camera preview.
+  /// Default: disabled.
+  final bool showExtremeLightSpots;
 
   /// Boost saturation/contrast of captured video before spectrum and
   /// luminosity analysis. Default: disabled.
@@ -36,15 +32,14 @@ class AppSettings extends Equatable {
   AppSettings copyWith({
     bool? detectColorPeaks,
     SpectrumUnit? spectrumUnit,
-    bool? showBrightestPoint,
-    bool? showDarkestPoint,
+    bool? showExtremeLightSpots,
     bool? enhanceColors,
   }) {
     return AppSettings(
       detectColorPeaks: detectColorPeaks ?? this.detectColorPeaks,
       spectrumUnit: spectrumUnit ?? this.spectrumUnit,
-      showBrightestPoint: showBrightestPoint ?? this.showBrightestPoint,
-      showDarkestPoint: showDarkestPoint ?? this.showDarkestPoint,
+      showExtremeLightSpots:
+          showExtremeLightSpots ?? this.showExtremeLightSpots,
       enhanceColors: enhanceColors ?? this.enhanceColors,
     );
   }
@@ -53,8 +48,7 @@ class AppSettings extends Equatable {
   List<Object?> get props => [
     detectColorPeaks,
     spectrumUnit,
-    showBrightestPoint,
-    showDarkestPoint,
+    showExtremeLightSpots,
     enhanceColors,
   ];
 }

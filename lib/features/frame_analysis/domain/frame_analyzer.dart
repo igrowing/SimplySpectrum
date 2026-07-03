@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/point_rotation.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/spectrum_histogram.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/wavelength_color_table.dart';
@@ -112,19 +113,40 @@ FrameAnalysisResult analyzeFrame(
     luminosity: LuminosityHistogram(bins: luminosityBins),
     brightestPoint: brightestLuma == null
         ? null
-        : FramePoint(
-            normalizedX: brightestX / frame.width,
-            normalizedY: brightestY / frame.height,
+        : _toDisplayPoint(
+            rawX: brightestX / frame.width,
+            rawY: brightestY / frame.height,
             luma: brightestLuma,
+            frame: frame,
           ),
     darkestPoint: darkestLuma == null
         ? null
-        : FramePoint(
-            normalizedX: darkestX / frame.width,
-            normalizedY: darkestY / frame.height,
+        : _toDisplayPoint(
+            rawX: darkestX / frame.width,
+            rawY: darkestY / frame.height,
             luma: darkestLuma,
+            frame: frame,
           ),
   );
+}
+
+/// Converts a point expressed in raw sensor-buffer-normalized coordinates
+/// into the space the displayed, auto-rotated `CameraPreview` uses, so
+/// overlays land on the feature they're meant to mark rather than
+/// drifting to wherever the unrotated raw buffer put it.
+FramePoint _toDisplayPoint({
+  required double rawX,
+  required double rawY,
+  required int luma,
+  required RawCameraFrame frame,
+}) {
+  final display = rotatePointToDisplaySpace(
+    x: rawX,
+    y: rawY,
+    sensorOrientationDegrees: frame.sensorOrientationDegrees,
+    mirror: frame.isFrontFacing,
+  );
+  return FramePoint(normalizedX: display.x, normalizedY: display.y, luma: luma);
 }
 
 List<int> _yuvToRgb(int y, int u, int v) {
