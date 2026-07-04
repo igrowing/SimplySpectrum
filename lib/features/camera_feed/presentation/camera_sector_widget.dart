@@ -36,7 +36,7 @@ class CameraSectorWidget extends StatelessWidget {
           return Stack(
             fit: StackFit.expand,
             children: [
-              _buildPreview(),
+              _buildPreview(constraints),
               if (showExtremeLightSpots && brightestPoint != null)
                 _positionedMarker(
                   point: brightestPoint!,
@@ -107,7 +107,7 @@ class CameraSectorWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildPreview() {
+  Widget _buildPreview(BoxConstraints constraints) {
     final controller = viewModel.repository.controller;
     if (viewModel.errorMessage != null) {
       return Center(
@@ -130,12 +130,36 @@ class CameraSectorWidget extends StatelessWidget {
         ),
       );
     }
-    final preview = FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: controller.value.previewSize?.height ?? 1,
-        height: controller.value.previewSize?.width ?? 1,
-        child: CameraPreview(controller),
+    // `CameraPreview` already computes its own correct AspectRatio
+    // internally for whatever the CURRENT device orientation actually
+    // is (see the `camera` package's CameraPreview.build(): it inverts
+    // controller.value.aspectRatio for portrait vs landscape and, on
+    // Android, wraps the texture in a RotatedBox by the right number of
+    // quarter turns). It does NOT need any help from us to rotate or
+    // reshape the image - previously this widget forced an outer
+    // SizedBox with previewSize.width/height hard-swapped, which only
+    // matched the portrait case; in landscape that swap fought against
+    // CameraPreview's own (correct) sizing and squeezed/stretched the
+    // texture into the wrong box.
+    //
+    // The fix: give CameraPreview *loose but bounded* constraints (this
+    // sector's own box) via ConstrainedBox rather than SizedBox's tight
+    // ones - AspectRatio then computes its true, correctly-oriented
+    // "contain" size within that box, and the outer FittedBox(cover)
+    // uniformly scales that correctly-shaped result up to fill the
+    // sector, cropping only the unavoidable overflow (the same
+    // necessary edge-cropping any "fill the screen without letterbox
+    // bars" preview does) - never distorting the aspect ratio itself.
+    final preview = ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: constraints.maxWidth,
+            maxHeight: constraints.maxHeight,
+          ),
+          child: CameraPreview(controller),
+        ),
       ),
     );
     if (!enhanceColors) return preview;
