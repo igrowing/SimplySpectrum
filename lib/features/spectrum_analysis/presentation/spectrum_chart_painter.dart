@@ -68,11 +68,6 @@ class SpectrumChartPainter extends CustomPainter {
   static const double _tickLabelHeight = 16;
   static const double _yAxisLabelWidth = 34;
 
-  /// Minimum horizontal/vertical separation (px) enforced between peak
-  /// labels so nearby peaks don't render on top of each other.
-  static const double _minLabelDx = 89;
-  static const double _minLabelDy = 16;
-
   /// Minimum horizontal separation (px, in chart/screen space) between
   /// two displayed peak markers. Detected peaks closer together than
   /// this are treated as one cluster and only the single highest one
@@ -261,17 +256,6 @@ class SpectrumChartPainter extends CustomPainter {
         rect.right - candidate.painter.width,
       );
       var labelY = candidate.y - candidate.painter.height - 3;
-
-      var attempts = 0;
-      while (attempts < 30 &&
-          placed.any(
-            (existing) =>
-                (existing.left - labelX).abs() < _minLabelDx &&
-                (existing.top - labelY).abs() < _minLabelDy,
-          )) {
-        labelY -= _minLabelDy;
-        attempts++;
-      }
       labelY = labelY.clamp(rect.top, rect.bottom - candidate.painter.height);
 
       placed.add(
