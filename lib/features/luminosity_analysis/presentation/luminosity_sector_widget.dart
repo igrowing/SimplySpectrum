@@ -10,9 +10,14 @@ import 'package:simply_spectrum/features/luminosity_analysis/presentation/lumino
 /// The Luminosity sector: live brightness-occurrence chart plus its title
 /// and info button.
 class LuminositySectorWidget extends StatelessWidget {
-  const LuminositySectorWidget({required this.histogram, super.key});
+  const LuminositySectorWidget({
+    required this.histogram,
+    required this.yAxisMax,
+    super.key,
+  });
 
   final LuminosityHistogram histogram;
+  final int yAxisMax;
 
   String _averageLabel() {
     final avgLux = histogram.weightedAverageApproxLux;
@@ -44,7 +49,10 @@ class LuminositySectorWidget extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: CustomPaint(
-                    painter: LuminosityChartPainter(histogram: histogram),
+                    painter: LuminosityChartPainter(
+                      histogram: histogram,
+                      yAxisMax: yAxisMax,
+                    ),
                     size: Size.infinite,
                   ),
                 ),

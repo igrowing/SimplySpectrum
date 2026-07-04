@@ -15,12 +15,14 @@ class SpectrumSectorWidget extends StatelessWidget {
     required this.histogram,
     required this.unit,
     required this.showPeaks,
+    required this.yAxisMax,
     super.key,
   });
 
   final SpectrumHistogram histogram;
   final SpectrumUnit unit;
   final bool showPeaks;
+  final int yAxisMax;
 
   String _averageLabel() {
     final avgNm = histogram.weightedAverageNm;
@@ -60,6 +62,7 @@ class SpectrumSectorWidget extends StatelessWidget {
                       histogram: histogram,
                       unit: unit,
                       showPeaks: showPeaks,
+                      yAxisMax: yAxisMax,
                     ),
                     size: Size.infinite,
                   ),

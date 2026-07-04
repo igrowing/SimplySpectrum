@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:simply_spectrum/core/charting/axis_scale.dart';
 import 'package:simply_spectrum/features/camera_feed/domain/camera_repository.dart';
 import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
@@ -9,12 +10,18 @@ import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_h
 import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/spectrum_histogram.dart';
 
-/// How often the smoothed brightest/darkest overlay points are allowed to
-/// move on screen. The underlying detection still runs on every frame -
-/// only the on-screen position is throttled and averaged, since a raw
-/// per-frame point jitters distractingly even though each individual
-/// sample is accurate.
-const Duration kExtremePointUpdateInterval = Duration(milliseconds: 500);
+/// How often new camera frames are actually analyzed and the
+/// Spectrum/Luminosity charts and point overlays redraw. Camera frames
+/// arrive much faster than this (15-30fps); gating analysis to this
+/// interval keeps the UI feeling live while the charts stay readable
+/// instead of flickering on every single frame.
+const Duration kAnalysisInterval = Duration(milliseconds: 500);
+
+/// How often the Y-axis scale (the "full-height" occurrence count used
+/// to normalize and label the Spectrum/Luminosity charts) is allowed to
+/// change. Deliberately slower than [kAnalysisInterval] so the axis
+/// labels stay legible instead of rescaling on every chart update.
+const Duration kAxisRescaleInterval = Duration(seconds: 10);
 
 class _AnalyzeArgs {
   const _AnalyzeArgs({
@@ -30,41 +37,6 @@ class _AnalyzeArgs {
   final bool locateDarkestPoint;
 }
 
-/// Running mean of a stream of [FramePoint]s collected between two
-/// on-screen updates, so the displayed point is a smoothed average of
-/// every frame sampled in that window rather than a single noisy sample.
-class _PointAccumulator {
-  double _sumX = 0;
-  double _sumY = 0;
-  int _sumLuma = 0;
-  int _count = 0;
-
-  void add(FramePoint point) {
-    _sumX += point.normalizedX;
-    _sumY += point.normalizedY;
-    _sumLuma += point.luma;
-    _count++;
-  }
-
-  /// The mean point accumulated so far, or null if nothing was added.
-  /// Does not reset the accumulator - call [reset] once it's been read.
-  FramePoint? get average {
-    if (_count == 0) return null;
-    return FramePoint(
-      normalizedX: _sumX / _count,
-      normalizedY: _sumY / _count,
-      luma: (_sumLuma / _count).round(),
-    );
-  }
-
-  void reset() {
-    _sumX = 0;
-    _sumY = 0;
-    _sumLuma = 0;
-    _count = 0;
-  }
-}
-
 // Top-level so it can be sent to `compute`'s background isolate.
 FrameAnalysisResult _analyzeFrameIsolateEntry(_AnalyzeArgs args) =>
     analyzeFrame(
@@ -75,37 +47,47 @@ FrameAnalysisResult _analyzeFrameIsolateEntry(_AnalyzeArgs args) =>
     );
 
 /// Subscribes to the live camera frame stream and runs [analyzeFrame] off
-/// the UI thread for each frame, exposing the latest spectrum/luminosity
-/// histograms and points of interest to the presentation layer.
+/// the UI thread, at most once per [kAnalysisInterval], exposing the
+/// latest spectrum/luminosity histograms, their Y-axis scales, and
+/// points of interest to the presentation layer.
 ///
-/// A busy-flag throttle (rather than a fixed timer) means we always
-/// analyze the most recently available frame and never queue up stale
-/// work - the chart naturally settles to the device's real analysis rate.
+/// A time-gated busy-flag throttle (rather than analyzing every frame)
+/// means the chart update rate is a deliberate, predictable cadence
+/// rather than however fast the camera happens to stream frames.
 class AnalysisViewModel extends ChangeNotifier {
   AnalysisViewModel({
     required CameraRepository cameraRepository,
-    Duration extremePointUpdateInterval = kExtremePointUpdateInterval,
-  }) : _cameraRepository = cameraRepository {
+    Duration analysisInterval = kAnalysisInterval,
+    Duration axisRescaleInterval = kAxisRescaleInterval,
+  }) : _cameraRepository = cameraRepository,
+       _analysisInterval = analysisInterval {
     _subscription = _cameraRepository.frameStream.listen(_onFrame);
-    _pointUpdateTimer = Timer.periodic(
-      extremePointUpdateInterval,
-      (_) => _publishSmoothedPoints(),
+    _axisRescaleTimer = Timer.periodic(
+      axisRescaleInterval,
+      (_) => _rescaleAxes(),
     );
   }
 
   final CameraRepository _cameraRepository;
+  final Duration _analysisInterval;
   StreamSubscription<RawCameraFrame>? _subscription;
-  Timer? _pointUpdateTimer;
+  Timer? _axisRescaleTimer;
   bool _isBusy = false;
+  DateTime? _lastAnalysisTime;
   AppSettings _settings = const AppSettings();
-
-  final _PointAccumulator _brightestAccumulator = _PointAccumulator();
-  final _PointAccumulator _darkestAccumulator = _PointAccumulator();
 
   SpectrumHistogram spectrum = SpectrumHistogram.empty();
   LuminosityHistogram luminosity = LuminosityHistogram.empty();
   FramePoint? brightestPoint;
   FramePoint? darkestPoint;
+
+  /// Full-scale occurrence count for the Spectrum chart's Y axis, only
+  /// updated every [kAxisRescaleInterval] (see [_rescaleAxes]).
+  int spectrumAxisMax = 1;
+
+  /// Full-scale occurrence count for the Luminosity chart's Y axis, only
+  /// updated every [kAxisRescaleInterval] (see [_rescaleAxes]).
+  int luminosityAxisMax = 1;
 
   /// Called whenever the Settings screen's values change, so the next
   /// analyzed frame picks up the new options.
@@ -115,15 +97,19 @@ class AnalysisViewModel extends ChangeNotifier {
     if (wasEnabled && !settings.showExtremeLightSpots) {
       brightestPoint = null;
       darkestPoint = null;
-      _brightestAccumulator.reset();
-      _darkestAccumulator.reset();
       notifyListeners();
     }
   }
 
   Future<void> _onFrame(RawCameraFrame frame) async {
     if (_isBusy) return;
+    final now = DateTime.now();
+    if (_lastAnalysisTime != null &&
+        now.difference(_lastAnalysisTime!) < _analysisInterval) {
+      return;
+    }
     _isBusy = true;
+    _lastAnalysisTime = now;
     try {
       final locateExtremes = _settings.showExtremeLightSpots;
       final result = await compute(
@@ -137,11 +123,9 @@ class AnalysisViewModel extends ChangeNotifier {
       );
       spectrum = result.spectrum;
       luminosity = result.luminosity;
-      if (result.brightestPoint != null) {
-        _brightestAccumulator.add(result.brightestPoint!);
-      }
-      if (result.darkestPoint != null) {
-        _darkestAccumulator.add(result.darkestPoint!);
+      if (locateExtremes) {
+        brightestPoint = result.brightestPoint ?? brightestPoint;
+        darkestPoint = result.darkestPoint ?? darkestPoint;
       }
       notifyListeners();
     } finally {
@@ -149,27 +133,26 @@ class AnalysisViewModel extends ChangeNotifier {
     }
   }
 
-  /// Fired on [kExtremePointUpdateInterval]: moves the on-screen
-  /// brightest/darkest markers to the average of every sample collected
-  /// since the last tick, then clears the accumulators for the next
-  /// window. Chart data (spectrum/luminosity) is untouched here - it
-  /// keeps updating every frame via [_onFrame].
-  void _publishSmoothedPoints() {
-    if (!_settings.showExtremeLightSpots) return;
-    final nextBrightest = _brightestAccumulator.average;
-    final nextDarkest = _darkestAccumulator.average;
-    _brightestAccumulator.reset();
-    _darkestAccumulator.reset();
-    if (nextBrightest == null && nextDarkest == null) return;
-    brightestPoint = nextBrightest ?? brightestPoint;
-    darkestPoint = nextDarkest ?? darkestPoint;
+  /// Fired on [kAxisRescaleInterval]: recomputes each chart's Y-axis
+  /// full-scale value from the current histogram, rounded to a legible
+  /// "nice" number. Chart data itself keeps updating every
+  /// [kAnalysisInterval] via [_onFrame] - only the axis scale/labels are
+  /// held steady between rescales.
+  void _rescaleAxes() {
+    final spectrumMax = spectrum.bins.fold(0, (max, v) => v > max ? v : max);
+    final luminosityMax = luminosity.bins.fold(
+      0,
+      (max, v) => v > max ? v : max,
+    );
+    spectrumAxisMax = niceAxisMax(spectrumMax);
+    luminosityAxisMax = niceAxisMax(luminosityMax);
     notifyListeners();
   }
 
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
-    _pointUpdateTimer?.cancel();
+    _axisRescaleTimer?.cancel();
     super.dispose();
   }
 }

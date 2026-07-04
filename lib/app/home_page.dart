@@ -84,6 +84,7 @@ class _HomePageState extends State<HomePage> {
                             histogram: analysis.spectrum,
                             unit: settings.settings.spectrumUnit,
                             showPeaks: settings.settings.detectColorPeaks,
+                            yAxisMax: analysis.spectrumAxisMax,
                           ),
                         ),
                       ],
@@ -96,6 +97,7 @@ class _HomePageState extends State<HomePage> {
                           height: sectorHeight,
                           child: LuminositySectorWidget(
                             histogram: analysis.luminosity,
+                            yAxisMax: analysis.luminosityAxisMax,
                           ),
                         ),
                         SizedBox(

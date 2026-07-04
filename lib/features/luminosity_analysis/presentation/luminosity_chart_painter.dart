@@ -3,24 +3,43 @@ import 'package:flutter/material.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
 
 /// Draws the live Luminosity sector chart: white polyline histogram on a
-/// black background with a grey grid, and a static black-to-white
-/// gradient reference bar underneath.
+/// black background with a grey grid and Y-axis occurrence-count
+/// labels, and a static black-to-white gradient reference bar
+/// underneath.
+///
+/// The Y axis is normalized against [yAxisMax] rather than the current
+/// frame's own peak bin, so the polyline's height is comparable between
+/// updates; [yAxisMax] itself is expected to change only occasionally
+/// (see `AnalysisViewModel.luminosityAxisMax`), not on every repaint.
 class LuminosityChartPainter extends CustomPainter {
-  LuminosityChartPainter({required this.histogram});
+  LuminosityChartPainter({required this.histogram, required this.yAxisMax});
 
   final LuminosityHistogram histogram;
 
+  /// Occurrence count that maps to the top of the chart. A bin above
+  /// this (possible between rescales, since data updates more often
+  /// than the axis) simply clips at the top edge until the next
+  /// rescale.
+  final int yAxisMax;
+
   static const double _gradientBarHeight = 14;
+  static const double _yAxisLabelWidth = 28;
 
   @override
   void paint(Canvas canvas, Size size) {
     final plotHeight = size.height - _gradientBarHeight;
-    final plotRect = Rect.fromLTWH(0, 0, size.width, plotHeight);
+    final plotRect = Rect.fromLTWH(
+      _yAxisLabelWidth,
+      0,
+      size.width - _yAxisLabelWidth,
+      plotHeight,
+    );
 
     canvas.drawRect(plotRect, Paint()..color = Colors.black);
     _drawGrid(canvas, plotRect);
+    _drawYAxisLabels(canvas, plotRect);
     _drawHistogram(canvas, plotRect);
-    _drawGradientBar(canvas, size, plotHeight);
+    _drawGradientBar(canvas, plotRect, plotHeight);
   }
 
   void _drawGrid(Canvas canvas, Rect rect) {
@@ -38,14 +57,35 @@ class LuminosityChartPainter extends CustomPainter {
     }
   }
 
+  /// Draws occurrence-count labels to the left of the plot at the top
+  /// (full [yAxisMax]), middle (half) and bottom (zero) grid lines.
+  void _drawYAxisLabels(Canvas canvas, Rect rect) {
+    final labelValues = [yAxisMax, yAxisMax ~/ 2, 0];
+    final labelYs = [rect.top, rect.top + rect.height / 2, rect.bottom];
+
+    for (var i = 0; i < labelValues.length; i++) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: '${labelValues[i]}',
+          style: const TextStyle(color: Colors.white54, fontSize: 9),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final y = (labelYs[i] - painter.height / 2).clamp(
+        0.0,
+        rect.height - painter.height,
+      );
+      painter.paint(canvas, Offset(rect.left - _yAxisLabelWidth, y));
+    }
+  }
+
   void _drawHistogram(Canvas canvas, Rect rect) {
-    final maxCount = histogram.bins.fold(0, (max, v) => v > max ? v : max);
-    if (maxCount == 0) return;
+    if (yAxisMax == 0) return;
 
     final path = Path();
     for (var i = 0; i < histogram.bins.length; i++) {
       final x = rect.left + rect.width * i / (histogram.bins.length - 1);
-      final normalized = histogram.bins[i] / maxCount;
+      final normalized = (histogram.bins[i] / yAxisMax).clamp(0.0, 1.0);
       final y = rect.bottom - normalized * rect.height;
       if (i == 0) {
         path.moveTo(x, y);
@@ -63,8 +103,13 @@ class LuminosityChartPainter extends CustomPainter {
     );
   }
 
-  void _drawGradientBar(Canvas canvas, Size size, double top) {
-    final rect = Rect.fromLTWH(0, top, size.width, _gradientBarHeight);
+  void _drawGradientBar(Canvas canvas, Rect plotRect, double top) {
+    final rect = Rect.fromLTWH(
+      plotRect.left,
+      top,
+      plotRect.width,
+      _gradientBarHeight,
+    );
     final shader = const LinearGradient(
       colors: [Colors.black, Colors.white],
     ).createShader(rect);
@@ -73,6 +118,7 @@ class LuminosityChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant LuminosityChartPainter oldDelegate) {
-    return oldDelegate.histogram != histogram;
+    return oldDelegate.histogram != histogram ||
+        oldDelegate.yAxisMax != yAxisMax;
   }
 }

@@ -27,8 +27,9 @@ class _PeakLabel {
 }
 
 /// Draws the live Spectrum sector chart: white polyline histogram on a
-/// black background with a grey grid, a static 400-700nm color reference
-/// bar with tick marks, and optional peak labels.
+/// black background with a grey grid and Y-axis occurrence-count
+/// labels, a static 400-700nm color reference bar with tick marks, and
+/// optional peak labels.
 ///
 /// The X axis genuinely rescales with [unit]: in wavelength mode it is
 /// linear in nm (as the histogram bins are stored); in frequency mode
@@ -37,19 +38,32 @@ class _PeakLabel {
 /// inversely proportional to wavelength, this is a genuinely different
 /// (non-uniform, in bin-index terms) horizontal scale, not just a
 /// relabeling of the same fixed tick positions.
+///
+/// The Y axis is normalized against [yAxisMax] rather than the current
+/// frame's own peak bin, so the polyline's height is comparable between
+/// updates; [yAxisMax] itself is expected to change only occasionally
+/// (see `AnalysisViewModel.spectrumAxisMax`), not on every repaint.
 class SpectrumChartPainter extends CustomPainter {
   SpectrumChartPainter({
     required this.histogram,
     required this.unit,
     required this.showPeaks,
+    required this.yAxisMax,
   });
 
   final SpectrumHistogram histogram;
   final SpectrumUnit unit;
   final bool showPeaks;
 
+  /// Occurrence count that maps to the top of the chart. A bin above
+  /// this (possible between rescales, since data updates more often
+  /// than the axis - see `AnalysisViewModel.kAxisRescaleInterval`)
+  /// simply clips at the top edge until the next rescale.
+  final int yAxisMax;
+
   static const double _colorBarHeight = 18;
   static const double _tickLabelHeight = 16;
+  static const double _yAxisLabelWidth = 28;
 
   /// Minimum horizontal/vertical separation (px) enforced between peak
   /// labels so nearby peaks don't render on top of each other.
@@ -59,16 +73,22 @@ class SpectrumChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final plotHeight = size.height - _colorBarHeight - _tickLabelHeight;
-    final plotRect = Rect.fromLTWH(0, 0, size.width, plotHeight);
+    final plotRect = Rect.fromLTWH(
+      _yAxisLabelWidth,
+      0,
+      size.width - _yAxisLabelWidth,
+      plotHeight,
+    );
 
     canvas.drawRect(plotRect, Paint()..color = Colors.black);
     _drawGrid(canvas, plotRect);
+    _drawYAxisLabels(canvas, plotRect);
     _drawHistogram(canvas, plotRect);
     if (showPeaks) {
       _drawPeaks(canvas, plotRect);
     }
-    _drawColorBar(canvas, size, plotHeight);
-    _drawTicks(canvas, size, plotHeight);
+    _drawColorBar(canvas, plotRect, size, plotHeight);
+    _drawTicks(canvas, plotRect, plotHeight);
   }
 
   /// Fraction (0-1, left-to-right) of the X axis a given wavelength maps
@@ -104,19 +124,40 @@ class SpectrumChartPainter extends CustomPainter {
     }
   }
 
+  /// Draws occurrence-count labels to the left of the plot at the top
+  /// (full [yAxisMax]), middle (half) and bottom (zero) grid lines.
+  void _drawYAxisLabels(Canvas canvas, Rect rect) {
+    final labelValues = [yAxisMax, yAxisMax ~/ 2, 0];
+    final labelYs = [rect.top, rect.top + rect.height / 2, rect.bottom];
+
+    for (var i = 0; i < labelValues.length; i++) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: '${labelValues[i]}',
+          style: const TextStyle(color: Colors.white54, fontSize: 9),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final y = (labelYs[i] - painter.height / 2).clamp(
+        0.0,
+        rect.height - painter.height,
+      );
+      painter.paint(
+        canvas,
+        Offset(rect.left - _yAxisLabelWidth, y),
+      );
+    }
+  }
+
   void _drawHistogram(Canvas canvas, Rect rect) {
-    final maxCount = histogram.bins.fold(
-      0,
-      (max, v) => v > max ? v : max,
-    );
-    if (maxCount == 0) return;
+    if (yAxisMax == 0) return;
 
     final path = Path();
     var started = false;
     for (var i = 0; i < histogram.bins.length; i++) {
       final nm = kMinVisibleWavelengthNm + i;
       final x = rect.left + rect.width * _xFraction(nm);
-      final normalized = histogram.bins[i] / maxCount;
+      final normalized = (histogram.bins[i] / yAxisMax).clamp(0.0, 1.0);
       final y = rect.bottom - normalized * rect.height;
       if (!started) {
         path.moveTo(x, y);
@@ -136,8 +177,7 @@ class SpectrumChartPainter extends CustomPainter {
   }
 
   void _drawPeaks(Canvas canvas, Rect rect) {
-    final maxCount = histogram.bins.fold(0, (max, v) => v > max ? v : max);
-    if (maxCount == 0) return;
+    if (yAxisMax == 0) return;
 
     final peaks = histogram.detectPeaks();
     if (peaks.isEmpty) return;
@@ -146,7 +186,9 @@ class SpectrumChartPainter extends CustomPainter {
       for (final peak in peaks)
         _PeakLabel(
           x: rect.left + rect.width * _xFraction(peak.wavelengthNm),
-          y: rect.bottom - (peak.occurrences / maxCount) * rect.height,
+          y:
+              rect.bottom -
+              (peak.occurrences / yAxisMax).clamp(0.0, 1.0) * rect.height,
           painter: TextPainter(
             text: TextSpan(
               text: _labelFor(peak.wavelengthNm),
@@ -179,8 +221,8 @@ class SpectrumChartPainter extends CustomPainter {
 
     for (final candidate in ordered) {
       final labelX = (candidate.x - candidate.painter.width / 2).clamp(
-        0.0,
-        rect.width - candidate.painter.width,
+        rect.left,
+        rect.right - candidate.painter.width,
       );
       var labelY = candidate.y - candidate.painter.height - 3;
 
@@ -194,7 +236,7 @@ class SpectrumChartPainter extends CustomPainter {
         labelY -= _minLabelDy;
         attempts++;
       }
-      labelY = labelY.clamp(0.0, rect.height - candidate.painter.height);
+      labelY = labelY.clamp(rect.top, rect.bottom - candidate.painter.height);
 
       placed.add(
         Rect.fromLTWH(
@@ -216,8 +258,13 @@ class SpectrumChartPainter extends CustomPainter {
     return '${(hz / 1e14).toStringAsFixed(2)}e14Hz';
   }
 
-  void _drawColorBar(Canvas canvas, Size size, double top) {
-    final barRect = Rect.fromLTWH(0, top, size.width, _colorBarHeight);
+  void _drawColorBar(Canvas canvas, Rect plotRect, Size size, double top) {
+    final barRect = Rect.fromLTWH(
+      plotRect.left,
+      top,
+      plotRect.width,
+      _colorBarHeight,
+    );
     const columns = 150;
     for (var i = 0; i < columns; i++) {
       final t0 = i / columns;
@@ -238,7 +285,7 @@ class SpectrumChartPainter extends CustomPainter {
     }
   }
 
-  void _drawTicks(Canvas canvas, Size size, double colorBarTop) {
+  void _drawTicks(Canvas canvas, Rect plotRect, double colorBarTop) {
     final y = colorBarTop + _colorBarHeight + 2;
 
     final ticks = unit == SpectrumUnit.wavelengthNm
@@ -246,7 +293,7 @@ class SpectrumChartPainter extends CustomPainter {
         : _frequencyTicks();
 
     for (final tick in ticks) {
-      final x = size.width * tick.fraction;
+      final x = plotRect.left + plotRect.width * tick.fraction;
       final painter = TextPainter(
         text: TextSpan(
           text: tick.label,
@@ -255,8 +302,8 @@ class SpectrumChartPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
       final labelX = (x - painter.width / 2).clamp(
-        0.0,
-        size.width - painter.width,
+        plotRect.left,
+        plotRect.right - painter.width,
       );
       painter.paint(canvas, Offset(labelX, y));
     }
@@ -294,6 +341,7 @@ class SpectrumChartPainter extends CustomPainter {
   bool shouldRepaint(covariant SpectrumChartPainter oldDelegate) {
     return oldDelegate.histogram != histogram ||
         oldDelegate.unit != unit ||
-        oldDelegate.showPeaks != showPeaks;
+        oldDelegate.showPeaks != showPeaks ||
+        oldDelegate.yAxisMax != yAxisMax;
   }
 }
