@@ -75,6 +75,7 @@ class _HomePageState extends State<HomePage> {
                             darkestPoint: analysis.darkestPoint,
                             showExtremeLightSpots:
                                 settings.settings.showExtremeLightSpots,
+                            enhanceColors: settings.settings.enhanceColors,
                           ),
                         ),
                         SizedBox(

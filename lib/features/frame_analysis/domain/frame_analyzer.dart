@@ -25,6 +25,18 @@ const int _kMinLumaForSpectrum = 8;
 /// detection when sampleStep >= 5.
 const int kDefaultSampleStep = 8;
 
+/// How much [_enhance] scales each channel's distance from its pixel's
+/// own max channel when "Enhance colors" is on. Exposed (not private) so
+/// the live Camera sector preview can build an approximating color
+/// filter with the same boost - see `color_enhance_filter.dart`'s
+/// `buildEnhanceColorPreviewFilter`.
+const double kColorEnhanceSaturationBoost = 1.35;
+
+/// How much [_enhance] scales each channel's distance from the neutral
+/// midpoint (128) when "Enhance colors" is on. See
+/// [kColorEnhanceSaturationBoost].
+const double kColorEnhanceContrastBoost = 1.15;
+
 /// Analyzes one [RawCameraFrame] (YUV420) into a [FrameAnalysisResult]:
 /// a spectrum (wavelength) histogram, a luminosity histogram, and
 /// optionally the brightest/darkest sampled points.
@@ -176,13 +188,11 @@ List<int> _enhance(List<int> rgb) {
   final maxC = math.max(rgb[0], math.max(rgb[1], rgb[2])).toDouble();
   if (maxC == 0) return rgb;
 
-  const saturationBoost = 1.35;
-  const contrastBoost = 1.15;
-
   return rgb
       .map((channel) {
-        final saturated = maxC + (channel - maxC) * saturationBoost;
-        final contrasted = 128 + (saturated - 128) * contrastBoost;
+        final saturated =
+            maxC + (channel - maxC) * kColorEnhanceSaturationBoost;
+        final contrasted = 128 + (saturated - 128) * kColorEnhanceContrastBoost;
         return contrasted.round().clamp(0, 255);
       })
       .toList(growable: false);

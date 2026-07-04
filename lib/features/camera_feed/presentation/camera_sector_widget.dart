@@ -1,6 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
+import 'package:simply_spectrum/features/camera_feed/presentation/color_enhance_filter.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
 
 /// The Camera sector: just the live preview plus the optional
@@ -13,12 +14,18 @@ class CameraSectorWidget extends StatelessWidget {
     this.brightestPoint,
     this.darkestPoint,
     this.showExtremeLightSpots = false,
+    this.enhanceColors = false,
   });
 
   final CameraViewModel viewModel;
   final FramePoint? brightestPoint;
   final FramePoint? darkestPoint;
   final bool showExtremeLightSpots;
+
+  /// Mirrors the "Enhance colors" setting into the live preview itself
+  /// (see `color_enhance_filter.dart`), not just the analysis pipeline -
+  /// so what's on screen visually matches what's being measured.
+  final bool enhanceColors;
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +49,14 @@ class CameraSectorWidget extends StatelessWidget {
                   color: Colors.white,
                   constraints: constraints,
                 ),
+              // A transient notice (e.g. "torch is only available on the
+              // rear lens") floats over the still-live preview and clears
+              // itself after a few seconds (see CameraViewModel) - it
+              // must never replace `_buildPreview()` outright, or the
+              // feed would appear to freeze/go black until the message
+              // happened to be dismissed by some later action.
+              if (viewModel.transientMessage != null)
+                _transientMessageBanner(viewModel.transientMessage!),
             ],
           );
         },
@@ -64,6 +79,28 @@ class CameraSectorWidget extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: color, width: 2),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _transientMessageBanner(String message) {
+    return Positioned(
+      left: 8,
+      right: 8,
+      bottom: 8,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.65),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
           ),
         ),
       ),
@@ -93,13 +130,18 @@ class CameraSectorWidget extends StatelessWidget {
         ),
       );
     }
-    return FittedBox(
+    final preview = FittedBox(
       fit: BoxFit.cover,
       child: SizedBox(
         width: controller.value.previewSize?.height ?? 1,
         height: controller.value.previewSize?.width ?? 1,
         child: CameraPreview(controller),
       ),
+    );
+    if (!enhanceColors) return preview;
+    return ColorFiltered(
+      colorFilter: buildEnhanceColorPreviewFilter(),
+      child: preview,
     );
   }
 }

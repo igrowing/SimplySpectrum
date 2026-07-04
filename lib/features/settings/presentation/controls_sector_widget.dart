@@ -34,6 +34,13 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   static const double _verticalIconSize = 32;
   static const double _verticalPadding = 14;
 
+  static const TextStyle _labelStyle = TextStyle(
+    color: Colors.white70,
+    fontSize: 10,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.5,
+  );
+
   Future<void> _toggleKeepScreenOn() async {
     final next = !_keepScreenOn;
     await WakelockPlus.toggle(enable: next);
@@ -49,34 +56,71 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
     super.dispose();
   }
 
-  List<Widget> _mainButtons(CameraViewModel viewModel, {required bool large}) {
+  /// A main control button with its word label - stacked below the icon
+  /// in the horizontal layout, or placed to the icon's right in the
+  /// vertical (stacked) layout.
+  Widget _labeledButton({
+    required IconData icon,
+    required String semanticLabel,
+    required String label,
+    required VoidCallback onPressed,
+    required bool large,
+    required bool vertical,
+    bool isActive = false,
+  }) {
+    final button = TranslucentIconButton(
+      icon: icon,
+      semanticLabel: semanticLabel,
+      isActive: isActive,
+      iconSize: large ? _verticalIconSize : 22,
+      padding: large
+          ? const EdgeInsets.all(_verticalPadding)
+          : const EdgeInsets.all(10),
+      onPressed: onPressed,
+    );
+    final labelText = Text(label, style: _labelStyle);
+
+    if (vertical) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [button, const SizedBox(width: 10), labelText],
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [button, const SizedBox(height: 4), labelText],
+    );
+  }
+
+  List<Widget> _mainButtons(
+    CameraViewModel viewModel, {
+    required bool large,
+    required bool vertical,
+  }) {
     return [
-      TranslucentIconButton(
+      _labeledButton(
         icon: Icons.cameraswitch_outlined,
         semanticLabel: 'Swap camera',
-        iconSize: large ? _verticalIconSize : 22,
-        padding: large
-            ? const EdgeInsets.all(_verticalPadding)
-            : const EdgeInsets.all(10),
+        label: 'SWAP',
+        large: large,
+        vertical: vertical,
         onPressed: viewModel.switchLens,
       ),
-      TranslucentIconButton(
+      _labeledButton(
         icon: viewModel.isTorchOn ? Icons.flash_on : Icons.flash_off_outlined,
         semanticLabel: 'Toggle light',
+        label: 'TORCH',
         isActive: viewModel.isTorchOn,
-        iconSize: large ? _verticalIconSize : 22,
-        padding: large
-            ? const EdgeInsets.all(_verticalPadding)
-            : const EdgeInsets.all(10),
+        large: large,
+        vertical: vertical,
         onPressed: viewModel.toggleTorch,
       ),
-      TranslucentIconButton(
+      _labeledButton(
         icon: Icons.camera_alt_outlined,
         semanticLabel: 'Snapshot',
-        iconSize: large ? _verticalIconSize : 22,
-        padding: large
-            ? const EdgeInsets.all(_verticalPadding)
-            : const EdgeInsets.all(10),
+        label: 'SNAP',
+        large: large,
+        vertical: vertical,
         onPressed: widget.onSnapshot,
       ),
     ];
@@ -107,7 +151,11 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
                 // itself off available constraints rather than raw
                 // screen/hardware queries.
                 final isVertical = constraints.maxHeight > constraints.maxWidth;
-                final buttons = _mainButtons(viewModel, large: isVertical);
+                final buttons = _mainButtons(
+                  viewModel,
+                  large: isVertical,
+                  vertical: isVertical,
+                );
 
                 if (isVertical) {
                   return Column(
