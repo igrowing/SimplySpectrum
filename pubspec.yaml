@@ -55,6 +55,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   very_good_analysis: ^10.3.0
+  flutter_launcher_icons: ^0.14.4
+  change_app_package_name: ^1.5.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
