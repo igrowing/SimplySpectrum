@@ -77,7 +77,7 @@ class SpectrumChartPainter extends CustomPainter {
   /// two displayed peak markers. Detected peaks closer together than
   /// this are treated as one cluster and only the single highest one
   /// in that cluster is shown (see [_drawPeaks]).
-  static const double _minPeakSeparationPx = 80;
+  static const double _minPeakSeparationPx = 37;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -146,7 +146,7 @@ class SpectrumChartPainter extends CustomPainter {
     for (var i = 0; i < labelValues.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
-          text: '${labelValues[i]}px',
+          text: '${labelValues[i]}\npx',
           style: const TextStyle(color: Colors.white54, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
@@ -291,7 +291,7 @@ class SpectrumChartPainter extends CustomPainter {
       return '${nm.round()}nm';
     }
     final hz = nmToHz(nm);
-    return '${(hz / 1e14).toStringAsFixed(2)}e14Hz';
+    return '${(hz / 1e12).toStringAsFixed(2)}THz';
   }
 
   void _drawColorBar(Canvas canvas, Rect plotRect, Size size, double top) {

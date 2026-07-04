@@ -21,8 +21,8 @@ class LuminositySectorWidget extends StatelessWidget {
 
   String _averageLabel() {
     final avgLux = histogram.weightedAverageApproxLux;
-    if (avgLux == null) return 'Average luminosity: -';
-    return 'Average luminosity: ${avgLux.round()} lux';
+    if (avgLux == null) return 'Average: -';
+    return 'Average: ${avgLux.round()} lux';
   }
 
   @override

@@ -26,12 +26,12 @@ class SpectrumSectorWidget extends StatelessWidget {
 
   String _averageLabel() {
     final avgNm = histogram.weightedAverageNm;
-    if (avgNm == null) return 'Average color: -';
+    if (avgNm == null) return 'Average: -';
     if (unit == SpectrumUnit.wavelengthNm) {
-      return 'Average color: ${avgNm.round()} nm';
+      return 'Average: ${avgNm.round()} nm';
     }
     final hz = nmToHz(avgNm);
-    return 'Average color: ${(hz / 1e14).toStringAsFixed(2)}e14 Hz';
+    return 'Average: ${(hz / 1e12).toStringAsFixed(2)}THz';
   }
 
   @override
