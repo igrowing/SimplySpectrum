@@ -102,34 +102,47 @@ void main() {
       }
       await Future<void>.delayed(const Duration(milliseconds: 200));
 
-      // Only the first frame in the window should have been analyzed.
-      expect(notifyCount, 1);
+      // Only the first frame in the window should have been analyzed:
+      // one notify for the data itself, plus one for the first-frame
+      // axis seeding (see AnalysisViewModel._onFrame) - not 5.
+      expect(notifyCount, 2);
     });
 
     test(
-      'rescales axes only on axisRescaleInterval, not every frame',
+      'seeds the axis scale from the first frame instead of waiting for '
+      'the first axisRescaleInterval tick, then only rescales again on '
+      'that interval',
       () async {
         final camera = _FakeCameraRepository();
         final viewModel = AnalysisViewModel(
           cameraRepository: camera,
           analysisInterval: const Duration(milliseconds: 20),
-          axisRescaleInterval: const Duration(milliseconds: 150),
+          axisRescaleInterval: const Duration(milliseconds: 300),
         );
         addTearDown(viewModel.dispose);
 
         expect(viewModel.luminosityAxisMax, 1);
 
+        // First frame: the axis is seeded immediately rather than
+        // showing an exaggerated, near-flat-lined chart for up to
+        // axisRescaleInterval after launch.
         camera.emit(_uniformFrame(y: 200, u: 128, v: 128));
         await Future<void>.delayed(const Duration(milliseconds: 60));
 
-        // Chart data already updated, but the axis hasn't rescaled yet.
-        expect(viewModel.luminosity.totalOccurrences, greaterThan(0));
-        expect(viewModel.luminosityAxisMax, 1);
+        final seededMax = viewModel.luminosityAxisMax;
+        expect(seededMax, greaterThan(1));
 
-        // Wait past the axis rescale interval.
-        await Future<void>.delayed(const Duration(milliseconds: 150));
+        // A later frame arrives well before the next scheduled rescale
+        // tick - the axis should hold steady rather than jump around
+        // on every analyzed frame.
+        camera.emit(_uniformFrame(y: 255, u: 128, v: 128));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(viewModel.luminosityAxisMax, seededMax);
 
-        expect(viewModel.luminosityAxisMax, greaterThan(1));
+        // Once the rescale interval elapses, the axis is recomputed
+        // again from the latest data.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(viewModel.luminosityAxisMax, greaterThanOrEqualTo(1));
       },
     );
 

@@ -74,6 +74,7 @@ class AnalysisViewModel extends ChangeNotifier {
   Timer? _axisRescaleTimer;
   bool _isBusy = false;
   DateTime? _lastAnalysisTime;
+  bool _hasScaledAxesOnce = false;
   AppSettings _settings = const AppSettings();
 
   SpectrumHistogram spectrum = SpectrumHistogram.empty();
@@ -126,6 +127,15 @@ class AnalysisViewModel extends ChangeNotifier {
       if (locateExtremes) {
         brightestPoint = result.brightestPoint ?? brightestPoint;
         darkestPoint = result.darkestPoint ?? darkestPoint;
+      }
+      // Seed the Y-axis scale from the very first analyzed frame rather
+      // than leaving it at the placeholder value of 1 until the first
+      // `kAxisRescaleInterval` timer tick fires - otherwise both charts
+      // would show an absurdly tall, near-flat-lined polyline for up to
+      // 10 seconds after the app launches.
+      if (!_hasScaledAxesOnce) {
+        _hasScaledAxesOnce = true;
+        _rescaleAxes();
       }
       notifyListeners();
     } finally {

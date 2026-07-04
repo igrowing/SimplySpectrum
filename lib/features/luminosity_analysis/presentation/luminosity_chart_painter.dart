@@ -23,7 +23,7 @@ class LuminosityChartPainter extends CustomPainter {
   final int yAxisMax;
 
   static const double _gradientBarHeight = 14;
-  static const double _yAxisLabelWidth = 28;
+  static const double _yAxisLabelWidth = 34;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -58,7 +58,11 @@ class LuminosityChartPainter extends CustomPainter {
   }
 
   /// Draws occurrence-count labels to the left of the plot at the top
-  /// (full [yAxisMax]), middle (half) and bottom (zero) grid lines.
+  /// (full [yAxisMax]), middle (half) and bottom (zero) grid lines. Each
+  /// bin is a count of sampled pixels at that brightness level, so the
+  /// unit is pixels ("px") - not lux. Lux would describe a brightness
+  /// *value* (the X axis, shown via the gradient bar below), not "how
+  /// many pixels were at that brightness".
   void _drawYAxisLabels(Canvas canvas, Rect rect) {
     final labelValues = [yAxisMax, yAxisMax ~/ 2, 0];
     final labelYs = [rect.top, rect.top + rect.height / 2, rect.bottom];
@@ -66,7 +70,7 @@ class LuminosityChartPainter extends CustomPainter {
     for (var i = 0; i < labelValues.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
-          text: '${labelValues[i]}',
+          text: '${labelValues[i]}px',
           style: const TextStyle(color: Colors.white54, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,

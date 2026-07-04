@@ -61,14 +61,23 @@ class SpectrumChartPainter extends CustomPainter {
   /// simply clips at the top edge until the next rescale.
   final int yAxisMax;
 
-  static const double _colorBarHeight = 18;
+  // Half its original height - the color reference bar only needs to
+  // be a thin strip; a taller bar just ate into the chart's plot area
+  // for no added information.
+  static const double _colorBarHeight = 9;
   static const double _tickLabelHeight = 16;
-  static const double _yAxisLabelWidth = 28;
+  static const double _yAxisLabelWidth = 34;
 
   /// Minimum horizontal/vertical separation (px) enforced between peak
   /// labels so nearby peaks don't render on top of each other.
   static const double _minLabelDx = 89;
   static const double _minLabelDy = 16;
+
+  /// Minimum horizontal separation (px, in chart/screen space) between
+  /// two displayed peak markers. Detected peaks closer together than
+  /// this are treated as one cluster and only the single highest one
+  /// in that cluster is shown (see [_drawPeaks]).
+  static const double _minPeakSeparationPx = 80;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -125,7 +134,11 @@ class SpectrumChartPainter extends CustomPainter {
   }
 
   /// Draws occurrence-count labels to the left of the plot at the top
-  /// (full [yAxisMax]), middle (half) and bottom (zero) grid lines.
+  /// (full [yAxisMax]), middle (half) and bottom (zero) grid lines. Each
+  /// bin is a count of sampled pixels whose color matched that
+  /// wavelength, so the unit is pixels ("px"), not a physical color
+  /// quantity - there's no standard unit for "how many pixels looked
+  /// this color".
   void _drawYAxisLabels(Canvas canvas, Rect rect) {
     final labelValues = [yAxisMax, yAxisMax ~/ 2, 0];
     final labelYs = [rect.top, rect.top + rect.height / 2, rect.bottom];
@@ -133,7 +146,7 @@ class SpectrumChartPainter extends CustomPainter {
     for (var i = 0; i < labelValues.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
-          text: '${labelValues[i]}',
+          text: '${labelValues[i]}px',
           style: const TextStyle(color: Colors.white54, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
@@ -179,19 +192,42 @@ class SpectrumChartPainter extends CustomPainter {
   void _drawPeaks(Canvas canvas, Rect rect) {
     if (yAxisMax == 0) return;
 
-    final peaks = histogram.detectPeaks();
+    // Ask the histogram for many more raw local-maxima candidates than
+    // we intend to ever show; the pixel-distance suppression below (not
+    // this count) is what actually decides how many survive.
+    final peaks = histogram.detectPeaks(maxPeaks: 30);
     if (peaks.isEmpty) return;
 
-    final candidates = <_PeakLabel>[
+    final peaksByXDesc = [
       for (final peak in peaks)
+        (x: rect.left + rect.width * _xFraction(peak.wavelengthNm), peak: peak),
+    ]..sort((a, b) => b.peak.occurrences.compareTo(a.peak.occurrences));
+
+    // Non-max suppression in chart pixel space: walking from the
+    // highest peak down, a peak is only kept if it isn't within
+    // [_minPeakSeparationPx] of an already-kept (and therefore taller
+    // or equal) peak. This collapses a tight cluster of local maxima -
+    // e.g. sensor noise wobbling within one color band - down to a
+    // single label for the tallest one, instead of showing every
+    // little bump next to each other.
+    final kept = <({double x, SpectrumPeak peak})>[];
+    for (final candidate in peaksByXDesc) {
+      final suppressed = kept.any(
+        (existing) => (existing.x - candidate.x).abs() < _minPeakSeparationPx,
+      );
+      if (!suppressed) kept.add(candidate);
+    }
+
+    final candidates = <_PeakLabel>[
+      for (final entry in kept)
         _PeakLabel(
-          x: rect.left + rect.width * _xFraction(peak.wavelengthNm),
+          x: entry.x,
           y:
               rect.bottom -
-              (peak.occurrences / yAxisMax).clamp(0.0, 1.0) * rect.height,
+              (entry.peak.occurrences / yAxisMax).clamp(0.0, 1.0) * rect.height,
           painter: TextPainter(
             text: TextSpan(
-              text: _labelFor(peak.wavelengthNm),
+              text: _labelFor(entry.peak.wavelengthNm),
               style: const TextStyle(color: Colors.amber, fontSize: 9),
             ),
             textDirection: TextDirection.ltr,

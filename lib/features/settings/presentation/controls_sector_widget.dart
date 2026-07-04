@@ -27,6 +27,13 @@ class ControlsSectorWidget extends StatefulWidget {
 class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   bool _keepScreenOn = false;
 
+  /// Icon size for the 3 main controls when this sector's own box is
+  /// taller than it is wide (the "vertical" case): stacking them in a
+  /// [Column] frees up room to make them noticeably larger than the
+  /// fixed horizontal-layout size.
+  static const double _verticalIconSize = 32;
+  static const double _verticalPadding = 14;
+
   Future<void> _toggleKeepScreenOn() async {
     final next = !_keepScreenOn;
     await WakelockPlus.toggle(enable: next);
@@ -40,6 +47,39 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
       unawaited(WakelockPlus.disable());
     }
     super.dispose();
+  }
+
+  List<Widget> _mainButtons(CameraViewModel viewModel, {required bool large}) {
+    return [
+      TranslucentIconButton(
+        icon: Icons.cameraswitch_outlined,
+        semanticLabel: 'Swap camera',
+        iconSize: large ? _verticalIconSize : 22,
+        padding: large
+            ? const EdgeInsets.all(_verticalPadding)
+            : const EdgeInsets.all(10),
+        onPressed: viewModel.switchLens,
+      ),
+      TranslucentIconButton(
+        icon: viewModel.isTorchOn ? Icons.flash_on : Icons.flash_off_outlined,
+        semanticLabel: 'Toggle light',
+        isActive: viewModel.isTorchOn,
+        iconSize: large ? _verticalIconSize : 22,
+        padding: large
+            ? const EdgeInsets.all(_verticalPadding)
+            : const EdgeInsets.all(10),
+        onPressed: viewModel.toggleTorch,
+      ),
+      TranslucentIconButton(
+        icon: Icons.camera_alt_outlined,
+        semanticLabel: 'Snapshot',
+        iconSize: large ? _verticalIconSize : 22,
+        padding: large
+            ? const EdgeInsets.all(_verticalPadding)
+            : const EdgeInsets.all(10),
+        onPressed: widget.onSnapshot,
+      ),
+    ];
   }
 
   @override
@@ -60,30 +100,38 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
             ),
           ),
           Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TranslucentIconButton(
-                  icon: Icons.cameraswitch_outlined,
-                  semanticLabel: 'Swap camera',
-                  onPressed: viewModel.switchLens,
-                ),
-                const SizedBox(width: 16),
-                TranslucentIconButton(
-                  icon: viewModel.isTorchOn
-                      ? Icons.flash_on
-                      : Icons.flash_off_outlined,
-                  semanticLabel: 'Toggle light',
-                  isActive: viewModel.isTorchOn,
-                  onPressed: viewModel.toggleTorch,
-                ),
-                const SizedBox(width: 16),
-                TranslucentIconButton(
-                  icon: Icons.camera_alt_outlined,
-                  semanticLabel: 'Snapshot',
-                  onPressed: widget.onSnapshot,
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // This sector's own box, not the device orientation - it
+                // stays consistent with how the rest of the app sizes
+                // itself off available constraints rather than raw
+                // screen/hardware queries.
+                final isVertical = constraints.maxHeight > constraints.maxWidth;
+                final buttons = _mainButtons(viewModel, large: isVertical);
+
+                if (isVertical) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      buttons[0],
+                      const SizedBox(height: 16),
+                      buttons[1],
+                      const SizedBox(height: 16),
+                      buttons[2],
+                    ],
+                  );
+                }
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    buttons[0],
+                    const SizedBox(width: 16),
+                    buttons[1],
+                    const SizedBox(width: 16),
+                    buttons[2],
+                  ],
+                );
+              },
             ),
           ),
           Positioned(
