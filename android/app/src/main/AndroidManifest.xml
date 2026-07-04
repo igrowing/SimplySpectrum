@@ -5,7 +5,7 @@
     <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>
 
     <application
-        android:label="simply_spectrum"
+        android:label="SimplySpectrum"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
