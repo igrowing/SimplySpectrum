@@ -23,6 +23,7 @@ class CameraRepositoryImpl implements CameraRepository {
   List<plugin.CameraDescription> _availableCameras = [];
   CameraLensDirection? _currentLens;
   bool _isTorchOn = false;
+  bool _isFrozen = false;
 
   /// The plugin's description for the currently-open lens, kept around so
   /// each frame can be tagged with the sensor orientation/facing needed to
@@ -43,6 +44,9 @@ class CameraRepositoryImpl implements CameraRepository {
 
   @override
   bool get isTorchOn => _isTorchOn;
+
+  @override
+  bool get isFrozen => _isFrozen;
 
   @override
   Future<void> initialize({
@@ -121,6 +125,11 @@ class CameraRepositoryImpl implements CameraRepository {
     _activeDescription = description;
     _currentLens = lens;
     _isTorchOn = false;
+    // A freshly-opened controller always starts unpaused - there's
+    // nothing to "resume" on a brand new session, and preserving a
+    // frozen flag across a full lens-switch reopen wouldn't reflect any
+    // real paused native state anyway.
+    _isFrozen = false;
   }
 
   plugin.CameraDescription _describeFor(CameraLensDirection lens) {
@@ -135,7 +144,7 @@ class CameraRepositoryImpl implements CameraRepository {
   }
 
   void _onPluginFrame(plugin.CameraImage image) {
-    if (_frameStreamController.isClosed) return;
+    if (_frameStreamController.isClosed || _isFrozen) return;
 
     try {
       _frameStreamController.add(_toRawFrame(image));
@@ -201,6 +210,30 @@ class CameraRepositoryImpl implements CameraRepository {
         stackTrace: stackTrace,
       );
       throw CameraFailure('Unable to toggle torch: $error');
+    }
+  }
+
+  @override
+  Future<void> setFrozen(bool frozen) async {
+    if (frozen == _isFrozen) return;
+    final activeController = _controller;
+    if (activeController == null) {
+      throw const CameraFailure('Camera not initialized yet');
+    }
+    try {
+      if (frozen) {
+        await activeController.pausePreview();
+      } else {
+        await activeController.resumePreview();
+      }
+      _isFrozen = frozen;
+    } catch (error, stackTrace) {
+      _logger.error(
+        'Failed to toggle freeze',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw CameraFailure('Unable to toggle freeze: $error');
     }
   }
 

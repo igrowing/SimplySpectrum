@@ -52,6 +52,9 @@ class CameraViewModel extends ChangeNotifier {
   String? get transientMessage => _transientMessage;
 
   bool get isTorchOn => _cameraRepository.isTorchOn;
+
+  /// Whether acquisition is currently paused - see [toggleFreeze].
+  bool get isFrozen => _cameraRepository.isFrozen;
   CameraLensDirection? get currentLens => _cameraRepository.currentLens;
 
   Future<void> _initialize() async {
@@ -106,6 +109,25 @@ class CameraViewModel extends ChangeNotifier {
       // setTorchEnabled throws before flipping its internal flag, so
       // isTorchOn correctly stays false here - only the notice needs
       // showing, nothing to roll back.
+      _showTransientMessage(error.message);
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  /// Pauses (or resumes) camera acquisition: the preview freezes on its
+  /// last frame and the Spectrum/Luminosity charts and average color
+  /// stop updating too, so the user can study the current moment
+  /// without everything continuing to change underneath them.
+  Future<void> toggleFreeze() async {
+    try {
+      await _cameraRepository.setFrozen(!isFrozen);
+    } on CameraFailure catch (error, stackTrace) {
+      _logger.error(
+        'Failed to toggle freeze',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _showTransientMessage(error.message);
     } finally {
       notifyListeners();

@@ -107,6 +107,7 @@ class _HomePageState extends State<HomePage> {
                           child: ControlsSectorWidget(
                             viewModel: camera,
                             onSnapshot: () => _handleSnapshot(context),
+                            averageColor: analysis.averageColor,
                           ),
                         ),
                       ],

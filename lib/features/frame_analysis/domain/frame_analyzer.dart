@@ -3,6 +3,7 @@ import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dar
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/point_rotation.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/spectrum_histogram.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/wavelength_color_table.dart';
@@ -72,6 +73,11 @@ FrameAnalysisResult analyzeFrame(
   var darkestX = 0;
   var darkestY = 0;
 
+  var sampleCount = 0;
+  var rSum = 0;
+  var gSum = 0;
+  var bSum = 0;
+
   for (var y = 0; y < frame.height; y += sampleStep) {
     final uvY = y >> 1;
     for (var x = 0; x < frame.width; x += sampleStep) {
@@ -92,6 +98,11 @@ FrameAnalysisResult analyzeFrame(
       if (enhanceColors) {
         rgb = _enhance(rgb);
       }
+
+      sampleCount++;
+      rSum += rgb[0];
+      gSum += rgb[1];
+      bSum += rgb[2];
 
       final luma = _lumaFromRgb(rgb[0], rgb[1], rgb[2]);
       luminosityBins[luma]++;
@@ -123,6 +134,13 @@ FrameAnalysisResult analyzeFrame(
   return FrameAnalysisResult(
     spectrum: SpectrumHistogram(bins: spectrumBins),
     luminosity: LuminosityHistogram(bins: luminosityBins),
+    averageColor: sampleCount == 0
+        ? null
+        : RgbColor(
+            r: (rSum / sampleCount).round().clamp(0, 255),
+            g: (gSum / sampleCount).round().clamp(0, 255),
+            b: (bSum / sampleCount).round().clamp(0, 255),
+          ),
     brightestPoint: brightestLuma == null
         ? null
         : _toDisplayPoint(

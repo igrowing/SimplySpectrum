@@ -25,6 +25,9 @@ class _FakeCameraRepository implements CameraRepository {
   bool get isTorchOn => false;
 
   @override
+  bool get isFrozen => false;
+
+  @override
   Future<void> initialize({
     CameraLensDirection lens = CameraLensDirection.rear,
   }) async {}
@@ -34,6 +37,9 @@ class _FakeCameraRepository implements CameraRepository {
 
   @override
   Future<void> setTorchEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setFrozen(bool frozen) async {}
 
   @override
   Future<void> dispose() async {

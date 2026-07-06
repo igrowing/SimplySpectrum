@@ -19,6 +19,9 @@ abstract class CameraRepository {
   /// Whether the device's torch/LED is currently on.
   bool get isTorchOn;
 
+  /// Whether acquisition is currently paused - see [setFrozen].
+  bool get isFrozen;
+
   /// Opens the camera on the given lens and starts the frame stream.
   Future<void> initialize({
     CameraLensDirection lens = CameraLensDirection.rear,
@@ -31,6 +34,13 @@ abstract class CameraRepository {
   /// avoided per error-handling rules; callers should catch and surface
   /// a CameraFailure instead - implementations must not throw silently.
   Future<void> setTorchEnabled(bool enabled);
+
+  /// Pauses (`true`) or resumes (`false`) camera acquisition: the live
+  /// preview freezes on its last frame and [frameStream] stops emitting,
+  /// so the Spectrum/Luminosity charts and detected average color hold
+  /// still too - letting the user study a moment without everything
+  /// continuing to update underneath them.
+  Future<void> setFrozen(bool frozen);
 
   /// Releases camera hardware resources.
   Future<void> dispose();

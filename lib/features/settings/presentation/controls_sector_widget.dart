@@ -3,22 +3,29 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:simply_spectrum/core/widgets/translucent_icon_button.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/color_conversions.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-/// The Controls sector: large camera controls (swap lens, torch,
-/// snapshot) plus small "keep screen on" and "open settings" toggles.
-/// Replaces the old, over-dense Settings sector - the actual settings
-/// switches now live on their own full [SettingsScreen].
+/// The Controls sector: the average-color readout plus large camera
+/// controls (swap lens, torch, snapshot, freeze) and small "keep screen
+/// on"/"open settings" toggles. Detailed settings switches live on their
+/// own full [SettingsScreen] instead, keeping this sector uncluttered.
 class ControlsSectorWidget extends StatefulWidget {
   const ControlsSectorWidget({
     required this.viewModel,
     required this.onSnapshot,
     super.key,
+    this.averageColor,
   });
 
   final CameraViewModel viewModel;
   final VoidCallback onSnapshot;
+
+  /// Mean color of the most recently analyzed frame (null before the
+  /// first frame is analyzed), rendered as the RGB/CMYK/LAB readout box.
+  final RgbColor? averageColor;
 
   @override
   State<ControlsSectorWidget> createState() => _ControlsSectorWidgetState();
@@ -27,7 +34,7 @@ class ControlsSectorWidget extends StatefulWidget {
 class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   bool _keepScreenOn = false;
 
-  /// Icon size for the 3 main controls when this sector's own box is
+  /// Icon size for the 4 main controls when this sector's own box is
   /// taller than it is wide (the "vertical" case): stacking them in a
   /// [Column] frees up room to make them noticeably larger than the
   /// fixed horizontal-layout size.
@@ -36,7 +43,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
 
   static const TextStyle _labelStyle = TextStyle(
     color: Colors.white70,
-    fontSize: 10,
+    fontSize: 8,
     fontWeight: FontWeight.w600,
     letterSpacing: 0.5,
   );
@@ -56,16 +63,15 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
     super.dispose();
   }
 
-  /// A main control button with its word label - stacked below the icon
-  /// in the horizontal layout, or placed to the icon's right in the
-  /// vertical (stacked) layout.
+  /// A main control button with its word label stacked below the icon,
+  /// in both the horizontal and vertical (stacked) layouts - only the
+  /// icon/padding size changes between them, via [large].
   Widget _labeledButton({
     required IconData icon,
     required String semanticLabel,
     required String label,
     required VoidCallback onPressed,
     required bool large,
-    required bool vertical,
     bool isActive = false,
   }) {
     final button = TranslucentIconButton(
@@ -78,41 +84,34 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
           : const EdgeInsets.all(10),
       onPressed: onPressed,
     );
-    final labelText = Text(label, style: _labelStyle);
-
-    if (vertical) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [button, const SizedBox(width: 10), labelText],
-      );
-    }
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: [button, const SizedBox(height: 4), labelText],
+      children: [
+        button,
+        const SizedBox(height: 3),
+        Text(label, style: _labelStyle),
+      ],
     );
   }
 
-  List<Widget> _mainButtons(
-    CameraViewModel viewModel, {
-    required bool large,
-    required bool vertical,
-  }) {
+  List<Widget> _mainButtons(CameraViewModel viewModel, {required bool large}) {
+    final isFrozen = viewModel.isFrozen;
     return [
       _labeledButton(
         icon: Icons.cameraswitch_outlined,
         semanticLabel: 'Swap camera',
         label: 'SWAP',
         large: large,
-        vertical: vertical,
         onPressed: viewModel.switchLens,
       ),
       _labeledButton(
-        icon: viewModel.isTorchOn ? Icons.flash_on : Icons.flash_off_outlined,
+        icon: viewModel.isTorchOn
+            ? Icons.flashlight_on
+            : Icons.flashlight_off_outlined,
         semanticLabel: 'Toggle light',
         label: 'TORCH',
         isActive: viewModel.isTorchOn,
         large: large,
-        vertical: vertical,
         onPressed: viewModel.toggleTorch,
       ),
       _labeledButton(
@@ -120,8 +119,15 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
         semanticLabel: 'Snapshot',
         label: 'SNAP',
         large: large,
-        vertical: vertical,
         onPressed: widget.onSnapshot,
+      ),
+      _labeledButton(
+        icon: isFrozen ? Icons.play_arrow : Icons.ac_unit,
+        semanticLabel: isFrozen ? 'Resume' : 'Freeze',
+        label: isFrozen ? 'RESUME' : 'FREEZE',
+        isActive: isFrozen,
+        large: large,
+        onPressed: viewModel.toggleFreeze,
       ),
     ];
   }
@@ -151,32 +157,37 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
                 // itself off available constraints rather than raw
                 // screen/hardware queries.
                 final isVertical = constraints.maxHeight > constraints.maxWidth;
-                final buttons = _mainButtons(
-                  viewModel,
-                  large: isVertical,
-                  vertical: isVertical,
-                );
+                final buttons = _mainButtons(viewModel, large: isVertical);
+                final colorBox = _AverageColorBox(color: widget.averageColor);
 
                 if (isVertical) {
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      colorBox,
+                      const SizedBox(height: 12),
                       buttons[0],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                       buttons[1],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                       buttons[2],
+                      const SizedBox(height: 14),
+                      buttons[3],
                     ],
                   );
                 }
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    colorBox,
+                    const SizedBox(width: 14),
                     buttons[0],
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
                     buttons[1],
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
                     buttons[2],
+                    const SizedBox(width: 14),
+                    buttons[3],
                   ],
                 );
               },
@@ -217,6 +228,68 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The average-color readout: a swatch of the currently detected mean
+/// color with its RGB/CMYK/LAB values printed on top, in a text color
+/// chosen for contrast against that swatch.
+class _AverageColorBox extends StatelessWidget {
+  const _AverageColorBox({required this.color});
+
+  final RgbColor? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final sampled = color;
+    if (sampled == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white10,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: const Text(
+          'Detecting color…',
+          style: TextStyle(color: Colors.white54, fontSize: 9),
+        ),
+      );
+    }
+
+    final cmyk = rgbToCmyk(sampled);
+    final lab = rgbToLab(sampled);
+    // Lab lightness (0-100) is a perceptually-meaningful "how dark is
+    // this color" measure we already have on hand - below the midpoint
+    // reads as dark, so white text stays legible on it.
+    final textColor = lab.l < 50 ? Colors.white : Colors.black;
+    final textStyle = TextStyle(
+      color: textColor,
+      fontSize: 9,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      height: 1.4,
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Color.fromARGB(255, sampled.r, sampled.g, sampled.b),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('RGB: ${sampled.hex}', style: textStyle),
+          Text(
+            'CMYK: ${cmyk.c}/${cmyk.m}/${cmyk.y}/${cmyk.k}',
+            style: textStyle,
+          ),
+          Text('LAB: ${lab.l},${lab.a},${lab.b}', style: textStyle),
         ],
       ),
     );

@@ -6,6 +6,7 @@ import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dar
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analyzer.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
 import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/spectrum_histogram.dart';
@@ -82,6 +83,11 @@ class AnalysisViewModel extends ChangeNotifier {
   FramePoint? brightestPoint;
   FramePoint? darkestPoint;
 
+  /// Mean color over the most recently analyzed frame, for the Controls
+  /// sector's average-color readout. Null until the first frame is
+  /// analyzed.
+  RgbColor? averageColor;
+
   /// Full-scale occurrence count for the Spectrum chart's Y axis, only
   /// updated every [kAxisRescaleInterval] (see [_rescaleAxes]).
   int spectrumAxisMax = 1;
@@ -124,6 +130,7 @@ class AnalysisViewModel extends ChangeNotifier {
       );
       spectrum = result.spectrum;
       luminosity = result.luminosity;
+      averageColor = result.averageColor ?? averageColor;
       if (locateExtremes) {
         brightestPoint = result.brightestPoint ?? brightestPoint;
         darkestPoint = result.darkestPoint ?? darkestPoint;

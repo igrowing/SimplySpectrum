@@ -75,6 +75,12 @@ void main() {
 
       expect(result.luminosity.totalOccurrences, greaterThan(0));
       expect(result.spectrum.totalOccurrences, 0);
+      // Neutral grey Y=U=V=128 should decode to a roughly-equal R/G/B
+      // average color.
+      final average = result.averageColor;
+      expect(average, isNotNull);
+      expect(average!.r, closeTo(average.g, 5));
+      expect(average.g, closeTo(average.b, 5));
     });
 
     test('locates brightest and darkest points when requested', () {
@@ -143,6 +149,7 @@ void main() {
 
       expect(result.spectrum.totalOccurrences, 0);
       expect(result.luminosity.totalOccurrences, 0);
+      expect(result.averageColor, isNull);
     });
   });
 }
