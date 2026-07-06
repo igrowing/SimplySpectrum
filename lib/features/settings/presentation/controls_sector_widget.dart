@@ -8,10 +8,17 @@ import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-/// The Controls sector: the average-color readout plus large camera
-/// controls (swap lens, torch, snapshot, freeze) and small "keep screen
-/// on"/"open settings" toggles. Detailed settings switches live on their
-/// own full [SettingsScreen] instead, keeping this sector uncluttered.
+/// The "thickness" of the average-color strip: its height when it spans
+/// the sector's full width (vertical layout), or its width when it spans
+/// the sector's full height (horizontal layout).
+const double _averageColorStripThickness = 80;
+
+/// The Controls sector: the average-color readout (a full-bleed strip
+/// that reads as a continuation of the sector rather than a floating
+/// card) plus a 2x2 grid of camera controls (swap lens, torch, snapshot,
+/// freeze) and small "keep screen on"/"open settings" toggles. Detailed
+/// settings switches live on their own full [SettingsScreen] instead,
+/// keeping this sector uncluttered.
 class ControlsSectorWidget extends StatefulWidget {
   const ControlsSectorWidget({
     required this.viewModel,
@@ -24,7 +31,8 @@ class ControlsSectorWidget extends StatefulWidget {
   final VoidCallback onSnapshot;
 
   /// Mean color of the most recently analyzed frame (null before the
-  /// first frame is analyzed), rendered as the RGB/CMYK/LAB readout box.
+  /// first frame is analyzed), rendered as the RGB/CMYK/LAB readout
+  /// strip.
   final RgbColor? averageColor;
 
   @override
@@ -35,11 +43,11 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   bool _keepScreenOn = false;
 
   /// Icon size for the 4 main controls when this sector's own box is
-  /// taller than it is wide (the "vertical" case): stacking them in a
-  /// [Column] frees up room to make them noticeably larger than the
-  /// fixed horizontal-layout size.
-  static const double _verticalIconSize = 32;
-  static const double _verticalPadding = 14;
+  /// taller than it is wide (the "vertical" case): the taller box frees
+  /// up room to make them noticeably larger than the fixed
+  /// horizontal-layout size.
+  static const double _verticalIconSize = 30;
+  static const double _verticalPadding = 12;
 
   static const TextStyle _labelStyle = TextStyle(
     color: Colors.white70,
@@ -63,9 +71,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
     super.dispose();
   }
 
-  /// A main control button with its word label stacked below the icon,
-  /// in both the horizontal and vertical (stacked) layouts - only the
-  /// icon/padding size changes between them, via [large].
+  /// A main control button with its word label stacked below the icon.
   Widget _labeledButton({
     required IconData icon,
     required String semanticLabel,
@@ -73,11 +79,13 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
     required VoidCallback onPressed,
     required bool large,
     bool isActive = false,
+    bool strikethrough = false,
   }) {
     final button = TranslucentIconButton(
       icon: icon,
       semanticLabel: semanticLabel,
       isActive: isActive,
+      strikethrough: strikethrough,
       iconSize: large ? _verticalIconSize : 22,
       padding: large
           ? const EdgeInsets.all(_verticalPadding)
@@ -122,7 +130,13 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
         onPressed: widget.onSnapshot,
       ),
       _labeledButton(
-        icon: isFrozen ? Icons.play_arrow : Icons.ac_unit,
+        // Material Icons has no dedicated "cancelled snowflake" glyph,
+        // so the resumed state reuses the same snowflake with a
+        // strike bar drawn over it (see TranslucentIconButton) rather
+        // than switching to an unrelated icon - it reads as "freeze,
+        // cancelled" instead of an arbitrary play/pause swap.
+        icon: Icons.ac_unit,
+        strikethrough: isFrozen,
         semanticLabel: isFrozen ? 'Resume' : 'Freeze',
         label: isFrozen ? 'RESUME' : 'FREEZE',
         isActive: isFrozen,
@@ -132,6 +146,35 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
     ];
   }
 
+  /// Lays the 4 main buttons out as a 2x2 grid (rather than a single
+  /// line of 4), so each button gets more breathing room in both
+  /// dimensions regardless of the sector's own aspect ratio.
+  Widget _buttonGrid(List<Widget> buttons, {required bool large}) {
+    final gap = large ? 16.0 : 12.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            buttons[0],
+            SizedBox(width: gap),
+            buttons[1],
+          ],
+        ),
+        SizedBox(height: gap),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            buttons[2],
+            SizedBox(width: gap),
+            buttons[3],
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final viewModel = widget.viewModel;
@@ -139,59 +182,43 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
       color: const Color(0xFF101014),
       child: Stack(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: Text(
-              'Controls',
-              style: TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Center(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // This sector's own box, not the device orientation - it
-                // stays consistent with how the rest of the app sizes
-                // itself off available constraints rather than raw
-                // screen/hardware queries.
-                final isVertical = constraints.maxHeight > constraints.maxWidth;
-                final buttons = _mainButtons(viewModel, large: isVertical);
-                final colorBox = _AverageColorBox(color: widget.averageColor);
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // This sector's own box, not the device orientation - it
+              // stays consistent with how the rest of the app sizes
+              // itself off available constraints rather than raw
+              // screen/hardware queries.
+              final isVertical = constraints.maxHeight > constraints.maxWidth;
+              final buttons = _mainButtons(viewModel, large: isVertical);
+              final grid = _buttonGrid(buttons, large: isVertical);
+              final colorStrip = _AverageColorStrip(
+                color: widget.averageColor,
+                vertical: isVertical,
+              );
 
-                if (isVertical) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      colorBox,
-                      const SizedBox(height: 12),
-                      buttons[0],
-                      const SizedBox(height: 14),
-                      buttons[1],
-                      const SizedBox(height: 14),
-                      buttons[2],
-                      const SizedBox(height: 14),
-                      buttons[3],
-                    ],
-                  );
-                }
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
+              // The strip is a sibling of the button grid (not stacked
+              // on top of it) so the two can never visually overlap: in
+              // the vertical layout it's a fixed-height band across the
+              // full width at the top, with the grid centered in the
+              // remaining space below; in the horizontal layout it's a
+              // fixed-width band across the full height on the left,
+              // with the grid centered in the remaining space to the
+              // right.
+              if (isVertical) {
+                return Column(
                   children: [
-                    colorBox,
-                    const SizedBox(width: 14),
-                    buttons[0],
-                    const SizedBox(width: 14),
-                    buttons[1],
-                    const SizedBox(width: 14),
-                    buttons[2],
-                    const SizedBox(width: 14),
-                    buttons[3],
+                    colorStrip,
+                    Expanded(child: Center(child: grid)),
                   ],
                 );
-              },
-            ),
+              }
+              return Row(
+                children: [
+                  colorStrip,
+                  Expanded(child: Center(child: grid)),
+                ],
+              );
+            },
           ),
           Positioned(
             right: 8,
@@ -234,32 +261,45 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   }
 }
 
-/// The average-color readout: a swatch of the currently detected mean
-/// color with its RGB/CMYK/LAB values printed on top, in a text color
-/// chosen for contrast against that swatch.
-class _AverageColorBox extends StatelessWidget {
-  const _AverageColorBox({required this.color});
+/// The average-color readout: a full-bleed strip (no rounded corners,
+/// spanning the sector's full width in the vertical layout or full
+/// height in the horizontal one, so it reads as a continuation of the
+/// sector rather than a separate floating card) filled with the
+/// currently detected mean color, with its RGB/CMYK/LAB values printed
+/// on top in a text color chosen for contrast against that fill.
+class _AverageColorStrip extends StatelessWidget {
+  const _AverageColorStrip({required this.color, required this.vertical});
 
   final RgbColor? color;
+
+  /// True when this strip spans the sector's full width (sitting above
+  /// the button grid); false when it spans the full height (sitting to
+  /// the grid's left).
+  final bool vertical;
 
   @override
   Widget build(BuildContext context) {
     final sampled = color;
-    if (sampled == null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.white24),
-        ),
-        child: const Text(
-          'Detecting color…',
-          style: TextStyle(color: Colors.white54, fontSize: 9),
-        ),
-      );
-    }
+    final child = sampled == null
+        ? const Text(
+            'Detecting color…',
+            style: TextStyle(color: Colors.white54, fontSize: 9),
+          )
+        : _readout(sampled);
 
+    return Container(
+      width: vertical ? double.infinity : _averageColorStripThickness,
+      height: vertical ? _averageColorStripThickness : double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      alignment: Alignment.centerLeft,
+      color: sampled == null
+          ? Colors.white10
+          : Color.fromARGB(255, sampled.r, sampled.g, sampled.b),
+      child: child,
+    );
+  }
+
+  Widget _readout(RgbColor sampled) {
     final cmyk = rgbToCmyk(sampled);
     final lab = rgbToLab(sampled);
     // Lab lightness (0-100) is a perceptually-meaningful "how dark is
@@ -270,28 +310,24 @@ class _AverageColorBox extends StatelessWidget {
       color: textColor,
       fontSize: 9,
       fontFeatures: const [FontFeature.tabularFigures()],
-      height: 1.4,
+      height: 1.35,
     );
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Color.fromARGB(255, sampled.r, sampled.g, sampled.b),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('RGB: ${sampled.hex}', style: textStyle),
-          Text(
-            'CMYK: ${cmyk.c}/${cmyk.m}/${cmyk.y}/${cmyk.k}',
-            style: textStyle,
-          ),
-          Text('LAB: ${lab.l},${lab.a},${lab.b}', style: textStyle),
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Avg. color:',
+          style: textStyle.copyWith(fontWeight: FontWeight.w700),
+        ),
+        Text('RGB: ${sampled.hex}', style: textStyle),
+        Text(
+          'CMYK: ${cmyk.c}/${cmyk.m}/${cmyk.y}/${cmyk.k}',
+          style: textStyle,
+        ),
+        Text('LAB: ${lab.l},${lab.a},${lab.b}', style: textStyle),
+      ],
     );
   }
 }

@@ -8,9 +8,7 @@ class SpectrumInfoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF101014),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF101014),
         title: const Text('About the Spectrum chart'),
         leading: BackButton(onPressed: () => Navigator.of(context).pop()),
       ),
@@ -69,7 +67,12 @@ class _Paragraph extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white70, height: 1.4),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.75),
+          height: 1.4,
+        ),
       ),
     );
   }

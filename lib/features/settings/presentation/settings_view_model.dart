@@ -65,4 +65,7 @@ class SettingsViewModel extends ChangeNotifier {
 
   Future<void> setEnhanceColors(bool value) =>
       _update((s) => s.copyWith(enhanceColors: value));
+
+  Future<void> setThemeMode(AppThemeMode value) =>
+      _update((s) => s.copyWith(themeMode: value));
 }

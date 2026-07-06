@@ -16,15 +16,17 @@ const String kBuyMeACoffeeUrl = 'https://www.buymeacoffee.com/igrowing';
 /// Holds every persisted app preference plus app identity info at the
 /// bottom, so the small Controls sector itself only needs a handful of
 /// large, frequently-used buttons.
+///
+/// Unlike the always-dark camera/analysis viewfinder, this screen (and
+/// the info screens) follow the user's chosen theme, so it's built with
+/// theme-derived colors throughout rather than hardcoded dark values.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF101014),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF101014),
         title: const Text('Settings'),
         leading: BackButton(onPressed: () => Navigator.of(context).pop()),
       ),
@@ -73,9 +75,13 @@ class SettingsScreen extends StatelessWidget {
                   value: settings.enhanceColors,
                   onChanged: viewModel.setEnhanceColors,
                 ),
+                _ThemeModeSetting(
+                  value: settings.themeMode,
+                  onChanged: viewModel.setThemeMode,
+                ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 32, 16, 0),
-                  child: Divider(color: Colors.white24),
+                  child: Divider(),
                 ),
                 const _AboutFooter(),
               ],
@@ -103,15 +109,64 @@ class _SettingSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SwitchListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle!,
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
-            ),
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
       value: value,
       onChanged: onChanged,
+    );
+  }
+}
+
+/// The Theme setting: a 3-way system/light/dark picker, styled to sit
+/// naturally among the switches above it.
+class _ThemeModeSetting extends StatelessWidget {
+  const _ThemeModeSetting({required this.value, required this.onChanged});
+
+  final AppThemeMode value;
+  final ValueChanged<AppThemeMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitleStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Theme', style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: 4),
+          Text(
+            'Applies to this screen and the info screens; the camera '
+            'view always stays dark',
+            style: subtitleStyle,
+          ),
+          const SizedBox(height: 12),
+          SegmentedButton<AppThemeMode>(
+            segments: const [
+              ButtonSegment(
+                value: AppThemeMode.system,
+                label: Text('System'),
+                icon: Icon(Icons.brightness_auto_outlined),
+              ),
+              ButtonSegment(
+                value: AppThemeMode.light,
+                label: Text('Light'),
+                icon: Icon(Icons.light_mode_outlined),
+              ),
+              ButtonSegment(
+                value: AppThemeMode.dark,
+                label: Text('Dark'),
+                icon: Icon(Icons.dark_mode_outlined),
+              ),
+            ],
+            selected: {value},
+            onSelectionChanged: (selection) => onChanged(selection.first),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -166,10 +221,7 @@ class _AboutFooterState extends State<_AboutFooter> {
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
       child: Column(
         children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
-          ),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 12),
           TextButton.icon(
             onPressed: _openBuyMeACoffee,

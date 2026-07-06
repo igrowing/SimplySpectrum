@@ -147,6 +147,21 @@ void main() {
       expect(viewModel.settings.enhanceColors, isTrue);
     });
 
+    test('setThemeMode updates only that field and persists', () async {
+      final repository = _FakeSettingsRepository();
+      final viewModel = SettingsViewModel(
+        repository: repository,
+        logger: _RecordingLogger(),
+      );
+      await _flushMicrotasks();
+
+      await viewModel.setThemeMode(AppThemeMode.dark);
+
+      expect(viewModel.settings.themeMode, AppThemeMode.dark);
+      expect(viewModel.settings.detectColorPeaks, isTrue);
+      expect(repository.lastSaved?.themeMode, AppThemeMode.dark);
+    });
+
     test('notifies listeners on load and on every update', () async {
       final repository = _FakeSettingsRepository();
       final viewModel = SettingsViewModel(

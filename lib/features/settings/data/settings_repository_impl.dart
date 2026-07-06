@@ -9,6 +9,7 @@ const _kDetectColorPeaksKey = 'settings.detect_color_peaks';
 const _kSpectrumUnitKey = 'settings.spectrum_unit_is_frequency';
 const _kShowExtremeLightSpotsKey = 'settings.show_extreme_light_spots';
 const _kEnhanceColorsKey = 'settings.enhance_colors';
+const _kThemeModeKey = 'settings.theme_mode';
 
 /// Legacy keys from before "show brightest/darkest point" were merged
 /// into a single "show extreme light spots" switch. Migrated on load so
@@ -16,6 +17,17 @@ const _kEnhanceColorsKey = 'settings.enhance_colors';
 /// merged switch starts on too.
 const _kLegacyShowBrightestPointKey = 'settings.show_brightest_point';
 const _kLegacyShowDarkestPointKey = 'settings.show_darkest_point';
+
+/// Parses a persisted [AppThemeMode] name back into the enum, falling
+/// back to the documented default for a missing/unrecognized value
+/// (e.g. `null` on first launch, or a stale name from a future app
+/// version rolled back).
+AppThemeMode _themeModeFromName(String? name) {
+  return AppThemeMode.values.firstWhere(
+    (mode) => mode.name == name,
+    orElse: () => const AppSettings().themeMode,
+  );
+}
 
 /// SharedPreferences-backed [SettingsRepository]. Missing keys (first
 /// launch) fall back to the documented [AppSettings] defaults - that is
@@ -45,6 +57,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
             defaults.showExtremeLightSpots,
         enhanceColors:
             prefs.getBool(_kEnhanceColorsKey) ?? defaults.enhanceColors,
+        themeMode: _themeModeFromName(prefs.getString(_kThemeModeKey)),
       );
     } catch (error, stackTrace) {
       _logger.error(
@@ -70,6 +83,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
         settings.showExtremeLightSpots,
       );
       await prefs.setBool(_kEnhanceColorsKey, settings.enhanceColors);
+      await prefs.setString(_kThemeModeKey, settings.themeMode.name);
       // Drop the superseded legacy keys once we've saved under the new
       // merged key, so a future load() never has stale legacy data to
       // migrate from again.

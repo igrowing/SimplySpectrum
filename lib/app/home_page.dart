@@ -43,80 +43,87 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // Safe-area insets are applied once, globally, in MaterialApp's
-      // `builder` (see main.dart) so every route gets the same
-      // treatment without nesting a SafeArea in each screen.
-      body: RepaintBoundary(
-        key: _screenBoundaryKey,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final sectorWidth = constraints.maxWidth / 2;
-            final sectorHeight = constraints.maxHeight / 2;
+      // A global SafeArea is also applied in MaterialApp's `builder`
+      // (see main.dart) so pushed routes (Settings, the info screens)
+      // get the same treatment. This screen additionally wraps its own
+      // body explicitly: it's the one laid out edge-to-edge as a 2x2
+      // sector grid sized directly off the incoming constraints, so
+      // it's the one place a gap in safe-area propagation would be
+      // most visible - the bottom sectors drawn under the Android
+      // navigation bar.
+      body: SafeArea(
+        child: RepaintBoundary(
+          key: _screenBoundaryKey,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final sectorWidth = constraints.maxWidth / 2;
+              final sectorHeight = constraints.maxHeight / 2;
 
-            return Consumer3<
-              CameraViewModel,
-              SettingsViewModel,
-              AnalysisViewModel
-            >(
-              builder: (context, camera, settings, analysis, _) {
-                analysis.settings = settings.settings;
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: sectorWidth,
-                          height: sectorHeight,
-                          child: CameraSectorWidget(
-                            viewModel: camera,
-                            brightestPoint: analysis.brightestPoint,
-                            darkestPoint: analysis.darkestPoint,
-                            showExtremeLightSpots:
-                                settings.settings.showExtremeLightSpots,
-                            enhanceColors: settings.settings.enhanceColors,
+              return Consumer3<
+                CameraViewModel,
+                SettingsViewModel,
+                AnalysisViewModel
+              >(
+                builder: (context, camera, settings, analysis, _) {
+                  analysis.settings = settings.settings;
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: sectorWidth,
+                            height: sectorHeight,
+                            child: CameraSectorWidget(
+                              viewModel: camera,
+                              brightestPoint: analysis.brightestPoint,
+                              darkestPoint: analysis.darkestPoint,
+                              showExtremeLightSpots:
+                                  settings.settings.showExtremeLightSpots,
+                              enhanceColors: settings.settings.enhanceColors,
+                            ),
                           ),
-                        ),
-                        SizedBox(
-                          width: sectorWidth,
-                          height: sectorHeight,
-                          child: SpectrumSectorWidget(
-                            histogram: analysis.spectrum,
-                            unit: settings.settings.spectrumUnit,
-                            showPeaks: settings.settings.detectColorPeaks,
-                            yAxisMax: analysis.spectrumAxisMax,
+                          SizedBox(
+                            width: sectorWidth,
+                            height: sectorHeight,
+                            child: SpectrumSectorWidget(
+                              histogram: analysis.spectrum,
+                              unit: settings.settings.spectrumUnit,
+                              showPeaks: settings.settings.detectColorPeaks,
+                              yAxisMax: analysis.spectrumAxisMax,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: sectorWidth,
-                          height: sectorHeight,
-                          child: LuminositySectorWidget(
-                            histogram: analysis.luminosity,
-                            yAxisMax: analysis.luminosityAxisMax,
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: sectorWidth,
+                            height: sectorHeight,
+                            child: LuminositySectorWidget(
+                              histogram: analysis.luminosity,
+                              yAxisMax: analysis.luminosityAxisMax,
+                            ),
                           ),
-                        ),
-                        SizedBox(
-                          width: sectorWidth,
-                          height: sectorHeight,
-                          child: ControlsSectorWidget(
-                            viewModel: camera,
-                            onSnapshot: () => _handleSnapshot(context),
-                            averageColor: analysis.averageColor,
+                          SizedBox(
+                            width: sectorWidth,
+                            height: sectorHeight,
+                            child: ControlsSectorWidget(
+                              viewModel: camera,
+                              onSnapshot: () => _handleSnapshot(context),
+                              averageColor: analysis.averageColor,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );

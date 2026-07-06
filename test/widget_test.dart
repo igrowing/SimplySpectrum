@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:simply_spectrum/core/logging/app_logger.dart';
 import 'package:simply_spectrum/features/settings/data/settings_repository_impl.dart';
+import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_screen.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_view_model.dart';
 
@@ -48,5 +49,14 @@ void main() {
     await tester.tap(find.text('Enhance colors'));
     await tester.pumpAndSettle();
     expect(viewModel.settings.enhanceColors, isTrue);
+
+    // The theme picker defaults to "System" and switching segments
+    // updates the persisted setting.
+    expect(find.text('Theme'), findsOneWidget);
+    expect(viewModel.settings.themeMode, AppThemeMode.system);
+
+    await tester.tap(find.text('Dark'));
+    await tester.pumpAndSettle();
+    expect(viewModel.settings.themeMode, AppThemeMode.dark);
   });
 }

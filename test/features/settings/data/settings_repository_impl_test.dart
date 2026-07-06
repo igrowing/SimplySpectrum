@@ -39,6 +39,20 @@ void main() {
       expect(reloaded, settings);
     });
 
+    test(
+      'load() falls back to the default theme when the persisted name is '
+      'missing or unrecognized',
+      () async {
+        final repository = SettingsRepositoryImpl(
+          logger: const DeveloperAppLogger(),
+        );
+
+        final settings = await repository.load();
+
+        expect(settings.themeMode, AppThemeMode.system);
+      },
+    );
+
     test('load() migrates the legacy brightest/darkest point keys', () async {
       SharedPreferences.setMockInitialValues({
         'settings.show_brightest_point': true,

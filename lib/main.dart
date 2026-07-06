@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:simply_spectrum/app/home_page.dart';
@@ -8,17 +11,32 @@ import 'package:simply_spectrum/features/camera_feed/data/camera_repository_impl
 import 'package:simply_spectrum/features/camera_feed/domain/camera_repository.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
 import 'package:simply_spectrum/features/frame_analysis/presentation/analysis_view_model.dart';
+import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/settings/domain/settings_repository.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_view_model.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Explicitly (rather than relying on whatever a given Android version/
+  // OEM skin defaults to) request edge-to-edge: the app draws full-bleed
+  // behind the status/navigation bars and Flutter reports their real
+  // dimensions back through MediaQuery.padding, which SafeArea (see
+  // below) then uses to keep content clear of them. Without this
+  // explicit call, some devices - particularly with 3-button
+  // navigation - have been seen to under-report the navigation bar
+  // inset, letting the bottom row of sectors get drawn underneath it.
+  unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   setupInjection();
   runApp(const SimplySpectrumApp());
 }
 
 /// Root widget: wires up the long-lived view models via `provider` and
-/// applies the app-wide dark theme (the sectors are designed for a black
-/// background with white/grey chart lines).
+/// applies the user's chosen light/dark/system theme to the app's
+/// chrome (Settings and info screens). The camera/analysis viewfinder
+/// itself (HomePage's sector grid) stays hardcoded dark regardless -
+/// it's designed around a black background so the spectrum/luminosity
+/// charts and sampled colors stay legible, not something the theme
+/// setting should touch.
 class SimplySpectrumApp extends StatelessWidget {
   const SimplySpectrumApp({super.key});
 
@@ -43,20 +61,36 @@ class SimplySpectrumApp extends StatelessWidget {
               AnalysisViewModel(cameraRepository: sl<CameraRepository>()),
         ),
       ],
-      child: MaterialApp(
-        title: 'SimplySpectrum',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData.dark(useMaterial3: true),
-        // Applied globally (rather than per-screen) so every route -
-        // including pushed info/settings screens - stays clear of the
-        // Android status bar and, importantly, the gesture/3-button
-        // navigation bar, which the OS otherwise draws on top of the
-        // app's edge-to-edge content. See igrowing/SimplyNet for the
-        // same pattern.
-        builder: (_, child) =>
-            SafeArea(child: child ?? const SizedBox.shrink()),
-        home: const HomePage(),
+      child: Consumer<SettingsViewModel>(
+        builder: (_, settingsViewModel, _) {
+          return MaterialApp(
+            title: 'SimplySpectrum',
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData.light(useMaterial3: true),
+            darkTheme: ThemeData.dark(useMaterial3: true),
+            themeMode: _toThemeMode(settingsViewModel.settings.themeMode),
+            // Applied globally (rather than per-screen) so every route -
+            // including pushed info/settings screens - stays clear of
+            // the Android status bar and, importantly, the
+            // gesture/3-button navigation bar, which the OS otherwise
+            // draws on top of the app's edge-to-edge content. See
+            // igrowing/SimplyNet for the same pattern.
+            builder: (_, child) =>
+                SafeArea(child: child ?? const SizedBox.shrink()),
+            home: const HomePage(),
+          );
+        },
       ),
     );
   }
+}
+
+/// Maps the persisted, framework-agnostic [AppThemeMode] to Flutter's
+/// own [ThemeMode] for [MaterialApp].
+ThemeMode _toThemeMode(AppThemeMode mode) {
+  return switch (mode) {
+    AppThemeMode.system => ThemeMode.system,
+    AppThemeMode.light => ThemeMode.light,
+    AppThemeMode.dark => ThemeMode.dark,
+  };
 }
