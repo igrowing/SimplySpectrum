@@ -70,7 +70,7 @@ class LuminosityChartPainter extends CustomPainter {
     for (var i = 0; i < labelValues.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
-          text: '${labelValues[i]}px',
+          text: '${labelValues[i]}\npx',
           style: const TextStyle(color: Colors.white54, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
@@ -101,7 +101,7 @@ class LuminosityChartPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.white
+        ..color = const Color.fromARGB(255, 255, 154, 23)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );

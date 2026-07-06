@@ -13,7 +13,7 @@ class TranslucentIconButton extends StatelessWidget {
     this.isActive = false,
     this.iconSize = 22,
     this.padding = const EdgeInsets.all(10),
-    this.strikethrough = false,
+    // this.strikethrough = false,
   });
 
   final IconData icon;
@@ -36,7 +36,7 @@ class TranslucentIconButton extends StatelessWidget {
   /// used for "freeze") that have no dedicated "off"/cancelled variant
   /// in Material Icons - visually the same "cancelled" language as
   /// icons that do (e.g. flash_off's built-in slash).
-  final bool strikethrough;
+  // final bool strikethrough;
 
   @override
   Widget build(BuildContext context) {
@@ -61,19 +61,19 @@ class TranslucentIconButton extends StatelessWidget {
                   size: iconSize,
                   semanticLabel: semanticLabel,
                 ),
-                if (strikethrough)
-                  Transform.rotate(
-                    key: const Key('translucentIconButton_strikethrough'),
-                    angle: -0.785398, // -45 degrees, in radians.
-                    child: Container(
-                      width: iconSize * 1.15,
-                      height: (iconSize * 0.12).clamp(1.5, 4),
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
+                // if (strikethrough)
+                //   Transform.rotate(
+                //     key: const Key('translucentIconButton_strikethrough'),
+                //     angle: -0.785398, // -45 degrees, in radians.
+                //     child: Container(
+                //       width: iconSize * 1.15,
+                //       height: (iconSize * 0.12).clamp(1.5, 4),
+                //       decoration: BoxDecoration(
+                //         color: color,
+                //         borderRadius: BorderRadius.circular(2),
+                //       ),
+                //     ),
+                //   ),
               ],
             ),
           ),

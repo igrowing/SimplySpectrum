@@ -11,7 +11,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 /// The "thickness" of the average-color strip: its height when it spans
 /// the sector's full width (vertical layout), or its width when it spans
 /// the sector's full height (horizontal layout).
-const double _averageColorStripThickness = 80;
+const double _averageColorStripThickness = 120;
 
 /// The Controls sector: the average-color readout (a full-bleed strip
 /// that reads as a continuation of the sector rather than a floating
@@ -79,13 +79,13 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
     required VoidCallback onPressed,
     required bool large,
     bool isActive = false,
-    bool strikethrough = false,
+    // bool strikethrough = false,
   }) {
     final button = TranslucentIconButton(
       icon: icon,
       semanticLabel: semanticLabel,
       isActive: isActive,
-      strikethrough: strikethrough,
+      // strikethrough: strikethrough,
       iconSize: large ? _verticalIconSize : 22,
       padding: large
           ? const EdgeInsets.all(_verticalPadding)
@@ -136,7 +136,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
         // than switching to an unrelated icon - it reads as "freeze,
         // cancelled" instead of an arbitrary play/pause swap.
         icon: Icons.ac_unit,
-        strikethrough: isFrozen,
+        // strikethrough: isFrozen,
         semanticLabel: isFrozen ? 'Resume' : 'Freeze',
         label: isFrozen ? 'RESUME' : 'FREEZE',
         isActive: isFrozen,
@@ -199,23 +199,33 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
               // The strip is a sibling of the button grid (not stacked
               // on top of it) so the two can never visually overlap: in
               // the vertical layout it's a fixed-height band across the
-              // full width at the top, with the grid centered in the
-              // remaining space below; in the horizontal layout it's a
-              // fixed-width band across the full height on the left,
-              // with the grid centered in the remaining space to the
-              // right.
+              // full width at the top, with the grid positioned 16% up
+              // from center in the remaining space below; in the
+              // horizontal layout it's a fixed-width band across the full
+              // height on the left, with the grid positioned 16% left
+              // from center in the remaining space to the right.
               if (isVertical) {
                 return Column(
                   children: [
                     colorStrip,
-                    Expanded(child: Center(child: grid)),
+                    Expanded(
+                      child: Align(
+                        alignment: const Alignment(0, -0.4),
+                        child: grid,
+                      ),
+                    ),
                   ],
                 );
               }
               return Row(
                 children: [
                   colorStrip,
-                  Expanded(child: Center(child: grid)),
+                  Expanded(
+                    child: Align(
+                      alignment: const Alignment(-0.4, 0),
+                      child: grid,
+                    ),
+                  ),
                 ],
               );
             },

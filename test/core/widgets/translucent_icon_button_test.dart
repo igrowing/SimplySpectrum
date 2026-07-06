@@ -34,24 +34,24 @@ void main() {
       expect(tapped, isTrue);
     });
 
-    testWidgets('draws a diagonal strike bar when strikethrough is true', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        TranslucentIconButton(
-          icon: Icons.ac_unit,
-          semanticLabel: 'Resume',
-          strikethrough: true,
-          onPressed: () {},
-        ),
-      );
+    // testWidgets('draws a diagonal strike bar when strikethrough is true', (
+    //   tester,
+    // ) async {
+    //   await pump(
+    //     tester,
+    //     TranslucentIconButton(
+    //       icon: Icons.ac_unit,
+    //       semanticLabel: 'Resume',
+    //       strikethrough: true,
+    //       onPressed: () {},
+    //     ),
+    //   );
 
-      expect(find.byIcon(Icons.ac_unit), findsOneWidget);
-      expect(
-        find.byKey(const Key('translucentIconButton_strikethrough')),
-        findsOneWidget,
-      );
-    });
+    //   expect(find.byIcon(Icons.ac_unit), findsOneWidget);
+    //   expect(
+    //     find.byKey(const Key('translucentIconButton_strikethrough')),
+    //     findsOneWidget,
+    //   );
+    // });
   });
 }

@@ -178,7 +178,7 @@ class SpectrumChartPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.white
+        ..color = const Color.fromARGB(255, 30, 248, 67)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
