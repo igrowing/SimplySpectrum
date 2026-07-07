@@ -34,7 +34,6 @@ void main() {
     expect(find.text('Show color in wave frequency (Hz)'), findsOneWidget);
     expect(find.text('Show the extreme light spots'), findsOneWidget);
     expect(find.text('Enhance colors'), findsOneWidget);
-    expect(find.text('Buy me a coffee'), findsOneWidget);
 
     // Default: "Detect color peaks" is on, everything else off.
     final switches = tester
@@ -58,5 +57,40 @@ void main() {
     await tester.tap(find.text('Dark'));
     await tester.pumpAndSettle();
     expect(viewModel.settings.themeMode, AppThemeMode.dark);
+
+    // The "Main screen order" grid shows the default arrangement.
+    expect(find.text('Main screen order'), findsOneWidget);
+    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Color chart'), findsOneWidget);
+    expect(find.text('Luminosity chart'), findsOneWidget);
+    expect(find.text('Controls'), findsOneWidget);
+
+    // Assigning Controls to the top-left dropdown (currently Camera)
+    // swaps the two: Controls moves to top-left, and Camera - what
+    // used to be there - takes over wherever Controls was (bottom-right).
+    await tester.tap(find.text('Camera'));
+    await tester.pumpAndSettle();
+    // The opened menu re-lists all 4 options; the last "Controls" match
+    // is the menu item (the other is the still-visible bottom-right
+    // dropdown showing its current selection).
+    await tester.tap(find.text('Controls').last);
+    await tester.pumpAndSettle();
+
+    expect(viewModel.settings.topLeftSector, SectorWidgetType.controls);
+    expect(viewModel.settings.bottomRightSector, SectorWidgetType.camera);
+    expect(viewModel.settings.topRightSector, SectorWidgetType.colorChart);
+    expect(
+      viewModel.settings.bottomLeftSector,
+      SectorWidgetType.luminosityChart,
+    );
+
+    // Scroll down to reach the footer at the bottom of the list, which
+    // is now off the default viewport with the new section above it.
+    await tester.scrollUntilVisible(
+      find.text('Buy me a coffee'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Buy me a coffee'), findsOneWidget);
   });
 }

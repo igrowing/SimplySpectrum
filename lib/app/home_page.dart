@@ -8,14 +8,19 @@ import 'package:simply_spectrum/features/camera_feed/presentation/camera_sector_
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
 import 'package:simply_spectrum/features/frame_analysis/presentation/analysis_view_model.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/presentation/luminosity_sector_widget.dart';
+import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/settings/presentation/controls_sector_widget.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_view_model.dart';
 import 'package:simply_spectrum/features/snapshot/domain/snapshot_repository.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/presentation/spectrum_sector_widget.dart';
 
-/// The app shell: a 2x2 grid of "sectors" - Camera, Spectrum, Luminosity
-/// and Controls - sized responsively with [LayoutBuilder] rather than
-/// querying raw screen dimensions or hardware type, per project rules.
+/// The app shell: a 2x2 grid of "sectors" - Camera, Color chart,
+/// Luminosity chart and Controls - sized responsively with
+/// [LayoutBuilder] rather than querying raw screen dimensions or
+/// hardware type, per project rules. Which sector occupies which
+/// quadrant is user-configurable (see the Settings screen's "Main
+/// screen order" section and `AppSettings.sectorAt`), defaulting to
+/// the grid's original fixed arrangement.
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -36,6 +41,47 @@ class _HomePageState extends State<HomePage> {
     } on SnapshotFailure catch (error) {
       sl<AppLogger>().warning('Snapshot failed: ${error.message}');
       messenger.showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  /// Builds whichever sector widget is currently assigned to [type] -
+  /// see the Settings screen's "Main screen order" section and
+  /// `AppSettings.sectorAt` - wiring it up to the same view models
+  /// regardless of which physical quadrant it ends up in.
+  Widget _buildSector(
+    SectorWidgetType type, {
+    required BuildContext context,
+    required CameraViewModel camera,
+    required AppSettings settings,
+    required AnalysisViewModel analysis,
+  }) {
+    switch (type) {
+      case SectorWidgetType.camera:
+        return CameraSectorWidget(
+          viewModel: camera,
+          brightestPoint: analysis.brightestPoint,
+          darkestPoint: analysis.darkestPoint,
+          showExtremeLightSpots: settings.showExtremeLightSpots,
+          enhanceColors: settings.enhanceColors,
+        );
+      case SectorWidgetType.colorChart:
+        return SpectrumSectorWidget(
+          histogram: analysis.spectrum,
+          unit: settings.spectrumUnit,
+          showPeaks: settings.detectColorPeaks,
+          yAxisMax: analysis.spectrumAxisMax,
+        );
+      case SectorWidgetType.luminosityChart:
+        return LuminositySectorWidget(
+          histogram: analysis.luminosity,
+          yAxisMax: analysis.luminosityAxisMax,
+        );
+      case SectorWidgetType.controls:
+        return ControlsSectorWidget(
+          viewModel: camera,
+          onSnapshot: () => _handleSnapshot(context),
+          averageColor: analysis.averageColor,
+        );
     }
   }
 
@@ -72,8 +118,19 @@ class _HomePageState extends State<HomePage> {
                 SettingsViewModel,
                 AnalysisViewModel
               >(
-                builder: (context, camera, settings, analysis, _) {
-                  analysis.settings = settings.settings;
+                builder: (context, camera, settingsViewModel, analysis, _) {
+                  final settings = settingsViewModel.settings;
+                  analysis.settings = settings;
+                  Widget sectorAt(SectorPosition position) {
+                    return _buildSector(
+                      settings.sectorAt(position),
+                      context: context,
+                      camera: camera,
+                      settings: settings,
+                      analysis: analysis,
+                    );
+                  }
+
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -83,24 +140,12 @@ class _HomePageState extends State<HomePage> {
                           SizedBox(
                             width: sectorWidth,
                             height: sectorHeight,
-                            child: CameraSectorWidget(
-                              viewModel: camera,
-                              brightestPoint: analysis.brightestPoint,
-                              darkestPoint: analysis.darkestPoint,
-                              showExtremeLightSpots:
-                                  settings.settings.showExtremeLightSpots,
-                              enhanceColors: settings.settings.enhanceColors,
-                            ),
+                            child: sectorAt(SectorPosition.topLeft),
                           ),
                           SizedBox(
                             width: sectorWidth,
                             height: sectorHeight,
-                            child: SpectrumSectorWidget(
-                              histogram: analysis.spectrum,
-                              unit: settings.settings.spectrumUnit,
-                              showPeaks: settings.settings.detectColorPeaks,
-                              yAxisMax: analysis.spectrumAxisMax,
-                            ),
+                            child: sectorAt(SectorPosition.topRight),
                           ),
                         ],
                       ),
@@ -110,19 +155,12 @@ class _HomePageState extends State<HomePage> {
                           SizedBox(
                             width: sectorWidth,
                             height: sectorHeight,
-                            child: LuminositySectorWidget(
-                              histogram: analysis.luminosity,
-                              yAxisMax: analysis.luminosityAxisMax,
-                            ),
+                            child: sectorAt(SectorPosition.bottomLeft),
                           ),
                           SizedBox(
                             width: sectorWidth,
                             height: sectorHeight,
-                            child: ControlsSectorWidget(
-                              viewModel: camera,
-                              onSnapshot: () => _handleSnapshot(context),
-                              averageColor: analysis.averageColor,
-                            ),
+                            child: sectorAt(SectorPosition.bottomRight),
                           ),
                         ],
                       ),

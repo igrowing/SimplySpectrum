@@ -68,4 +68,13 @@ class SettingsViewModel extends ChangeNotifier {
 
   Future<void> setThemeMode(AppThemeMode value) =>
       _update((s) => s.copyWith(themeMode: value));
+
+  /// Assigns [widget] to [position] in the main screen's sector grid,
+  /// swapping it with whatever was already there (see
+  /// `AppSettings.withSectorWidget`) - this is what each of the "Main
+  /// screen order" dropdowns calls on selection.
+  Future<void> setSectorWidget(
+    SectorPosition position,
+    SectorWidgetType widget,
+  ) => _update((s) => s.withSectorWidget(position, widget));
 }

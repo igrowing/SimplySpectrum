@@ -162,6 +162,27 @@ void main() {
       expect(repository.lastSaved?.themeMode, AppThemeMode.dark);
     });
 
+    test(
+      'setSectorWidget swaps the two positions and persists the result',
+      () async {
+        final repository = _FakeSettingsRepository();
+        final viewModel = SettingsViewModel(
+          repository: repository,
+          logger: _RecordingLogger(),
+        );
+        await _flushMicrotasks();
+
+        await viewModel.setSectorWidget(
+          SectorPosition.topLeft,
+          SectorWidgetType.controls,
+        );
+
+        expect(viewModel.settings.topLeftSector, SectorWidgetType.controls);
+        expect(viewModel.settings.bottomRightSector, SectorWidgetType.camera);
+        expect(repository.lastSaved?.topLeftSector, SectorWidgetType.controls);
+      },
+    );
+
     test('notifies listeners on load and on every update', () async {
       final repository = _FakeSettingsRepository();
       final viewModel = SettingsViewModel(

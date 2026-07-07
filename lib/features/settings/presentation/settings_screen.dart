@@ -79,6 +79,10 @@ class SettingsScreen extends StatelessWidget {
                   value: settings.themeMode,
                   onChanged: viewModel.setThemeMode,
                 ),
+                _MainScreenOrderSetting(
+                  settings: settings,
+                  onChanged: viewModel.setSectorWidget,
+                ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 32, 16, 0),
                   child: Divider(),
@@ -139,8 +143,8 @@ class _ThemeModeSetting extends StatelessWidget {
           Text('Theme', style: Theme.of(context).textTheme.bodyLarge),
           const SizedBox(height: 4),
           Text(
-            'Applies to this screen and the info screens; the camera '
-            'view always stays dark',
+            'Applies throughout the app; the live camera feed itself '
+            'always stays as-is',
             style: subtitleStyle,
           ),
           const SizedBox(height: 12),
@@ -167,6 +171,127 @@ class _ThemeModeSetting extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The "Main screen order" setting: a 2x2 grid of dropdowns, laid out
+/// to visually mirror the actual sector grid on the main screen (see
+/// `HomePage`) - top-left/top-right on one row, bottom-left/bottom-right
+/// on the next - so it's obvious at a glance which dropdown controls
+/// which physical position.
+///
+/// Choosing a widget for a position swaps it with whatever previously
+/// occupied that position (see `AppSettings.withSectorWidget`), since
+/// all 4 pieces of functionality must always be assigned somewhere -
+/// there's no "off" option.
+class _MainScreenOrderSetting extends StatelessWidget {
+  const _MainScreenOrderSetting({
+    required this.settings,
+    required this.onChanged,
+  });
+
+  final AppSettings settings;
+  final Future<void> Function(SectorPosition position, SectorWidgetType widget)
+  onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitleStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Main screen order',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Choose what each quadrant of the main screen shows. '
+            'Assigning one here swaps it with whatever it replaces.',
+            style: subtitleStyle,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _SectorDropdown(
+                  position: SectorPosition.topLeft,
+                  value: settings.topLeftSector,
+                  onChanged: onChanged,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SectorDropdown(
+                  position: SectorPosition.topRight,
+                  value: settings.topRightSector,
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _SectorDropdown(
+                  position: SectorPosition.bottomLeft,
+                  value: settings.bottomLeftSector,
+                  onChanged: onChanged,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SectorDropdown(
+                  position: SectorPosition.bottomRight,
+                  value: settings.bottomRightSector,
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single quadrant's dropdown in the "Main screen order" grid.
+class _SectorDropdown extends StatelessWidget {
+  const _SectorDropdown({
+    required this.position,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final SectorPosition position;
+  final SectorWidgetType value;
+  final Future<void> Function(SectorPosition position, SectorWidgetType widget)
+  onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<SectorWidgetType>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        for (final type in SectorWidgetType.values)
+          DropdownMenuItem(value: type, child: Text(type.label)),
+      ],
+      onChanged: (selected) {
+        if (selected != null) unawaited(onChanged(position, selected));
+      },
     );
   }
 }
