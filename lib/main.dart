@@ -31,12 +31,11 @@ void main() {
 }
 
 /// Root widget: wires up the long-lived view models via `provider` and
-/// applies the user's chosen light/dark/system theme to the app's
-/// chrome (Settings and info screens). The camera/analysis viewfinder
-/// itself (HomePage's sector grid) stays hardcoded dark regardless -
-/// it's designed around a black background so the spectrum/luminosity
-/// charts and sampled colors stay legible, not something the theme
-/// setting should touch.
+/// applies the user's chosen light/dark/system theme app-wide,
+/// including the main sector grid's chrome (backgrounds, chart
+/// grids/labels, button/text colors). The one deliberate exception is
+/// the live camera texture itself - see CameraSectorWidget - which
+/// always renders untouched by the theme.
 class SimplySpectrumApp extends StatelessWidget {
   const SimplySpectrumApp({super.key});
 

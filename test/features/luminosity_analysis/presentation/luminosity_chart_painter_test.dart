@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/rendering.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/presentation/luminosity_chart_painter.dart';
@@ -11,6 +11,8 @@ void main() {
       final painter = LuminosityChartPainter(
         histogram: LuminosityHistogram.empty(),
         yAxisMax: 1,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -27,6 +29,8 @@ void main() {
       final painter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: bins),
         yAxisMax: 40,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -42,11 +46,15 @@ void main() {
       final oldPainter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: bins),
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final changedBins = List<int>.from(bins)..[0] = 5;
       final newPainter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: changedBins),
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
 
       expect(newPainter.shouldRepaint(oldPainter), isTrue);
@@ -57,10 +65,50 @@ void main() {
       final oldPainter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: bins),
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final newPainter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: bins),
         yAxisMax: 20,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
+      );
+
+      expect(newPainter.shouldRepaint(oldPainter), isTrue);
+    });
+
+    test('shouldRepaint is true when only gridColor changes', () {
+      final bins = List<int>.filled(kLumaBinCount, 0);
+      final oldPainter = LuminosityChartPainter(
+        histogram: LuminosityHistogram(bins: bins),
+        yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
+      );
+      final newPainter = LuminosityChartPainter(
+        histogram: LuminosityHistogram(bins: bins),
+        yAxisMax: 10,
+        gridColor: Colors.blue,
+        labelColor: Colors.white,
+      );
+
+      expect(newPainter.shouldRepaint(oldPainter), isTrue);
+    });
+
+    test('shouldRepaint is true when only labelColor changes', () {
+      final bins = List<int>.filled(kLumaBinCount, 0);
+      final oldPainter = LuminosityChartPainter(
+        histogram: LuminosityHistogram(bins: bins),
+        yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
+      );
+      final newPainter = LuminosityChartPainter(
+        histogram: LuminosityHistogram(bins: bins),
+        yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.black,
       );
 
       expect(newPainter.shouldRepaint(oldPainter), isTrue);
@@ -71,10 +119,14 @@ void main() {
       final oldPainter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: bins),
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final newPainter = LuminosityChartPainter(
         histogram: LuminosityHistogram(bins: bins),
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
 
       expect(newPainter.shouldRepaint(oldPainter), isFalse);

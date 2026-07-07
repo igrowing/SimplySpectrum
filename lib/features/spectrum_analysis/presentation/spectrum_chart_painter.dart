@@ -26,10 +26,12 @@ class _PeakLabel {
   final TextPainter painter;
 }
 
-/// Draws the live Spectrum sector chart: white polyline histogram on a
-/// black background with a grey grid and Y-axis occurrence-count
-/// labels, a static 400-700nm color reference bar with tick marks, and
-/// optional peak labels.
+/// Draws the live Spectrum sector chart: a green polyline histogram
+/// over a themed grid with Y-axis occurrence-count labels, a static
+/// 400-700nm color reference bar with tick marks, and optional peak
+/// labels. The background itself is left to the parent sector widget's
+/// ColoredBox to paint, so it inverts with the theme along with the
+/// rest of the app's chrome.
 ///
 /// The X axis genuinely rescales with [unit]: in wavelength mode it is
 /// linear in nm (as the histogram bins are stored); in frequency mode
@@ -49,6 +51,8 @@ class SpectrumChartPainter extends CustomPainter {
     required this.unit,
     required this.showPeaks,
     required this.yAxisMax,
+    required this.gridColor,
+    required this.labelColor,
   });
 
   final SpectrumHistogram histogram;
@@ -60,6 +64,14 @@ class SpectrumChartPainter extends CustomPainter {
   /// than the axis - see `AnalysisViewModel.kAxisRescaleInterval`)
   /// simply clips at the top edge until the next rescale.
   final int yAxisMax;
+
+  /// Theme-derived chrome colors (see the sector widget), so the grid
+  /// and axis/tick labels properly invert with the light/dark theme.
+  /// The histogram polyline, peak markers, and the 400-700nm color
+  /// reference bar are substantive data, not chrome, so they keep
+  /// their own fixed colors regardless of theme.
+  final Color gridColor;
+  final Color labelColor;
 
   // Half its original height - the color reference bar only needs to
   // be a thin strip; a taller bar just ate into the chart's plot area
@@ -84,7 +96,6 @@ class SpectrumChartPainter extends CustomPainter {
       plotHeight,
     );
 
-    canvas.drawRect(plotRect, Paint()..color = Colors.black);
     _drawGrid(canvas, plotRect);
     _drawYAxisLabels(canvas, plotRect);
     _drawHistogram(canvas, plotRect);
@@ -111,7 +122,7 @@ class SpectrumChartPainter extends CustomPainter {
 
   void _drawGrid(Canvas canvas, Rect rect) {
     final gridPaint = Paint()
-      ..color = Colors.grey.shade700
+      ..color = gridColor
       ..strokeWidth = 1;
     const divisions = 4;
     for (var i = 1; i < divisions; i++) {
@@ -142,7 +153,7 @@ class SpectrumChartPainter extends CustomPainter {
       final painter = TextPainter(
         text: TextSpan(
           text: '${labelValues[i]}\npx',
-          style: const TextStyle(color: Colors.white54, fontSize: 9),
+          style: TextStyle(color: labelColor, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -317,7 +328,7 @@ class SpectrumChartPainter extends CustomPainter {
       final painter = TextPainter(
         text: TextSpan(
           text: tick.label,
-          style: const TextStyle(color: Colors.white54, fontSize: 9),
+          style: TextStyle(color: labelColor, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -362,6 +373,8 @@ class SpectrumChartPainter extends CustomPainter {
     return oldDelegate.histogram != histogram ||
         oldDelegate.unit != unit ||
         oldDelegate.showPeaks != showPeaks ||
-        oldDelegate.yAxisMax != yAxisMax;
+        oldDelegate.yAxisMax != yAxisMax ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.labelColor != labelColor;
   }
 }

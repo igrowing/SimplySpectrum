@@ -1,8 +1,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- The `gal` plugin (see SnapshotRepositoryImpl) checks/requests
+         WRITE_EXTERNAL_STORAGE at runtime on every device up to and
+         including Android 10 (API 29) - see its own
+         `USE_EXTERNAL_STORAGE = SDK_INT <= 29` cutoff. A maxSdkVersion
+         of 28 here was one off: on a real Android 10 device the OS
+         then refuses to grant this permission at all (regardless of
+         what the user taps in the "Files and media" runtime dialog,
+         or even toggles in system Settings afterwards), silently
+         leaving `Gal.requestAccess()`'s `granted` false forever - the
+         exact "denied" error the Snap button threw only on API 28/29
+         devices. 29 is the correct cap: it matches the plugin's own
+         legacy-storage branch and still correctly omits the permission
+         entirely on API 30+, where scoped storage means it's never
+         requested. -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+        android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="true"/>

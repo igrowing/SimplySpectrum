@@ -42,7 +42,15 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      // Background color intentionally left unset so it follows the
+      // theme's scaffoldBackgroundColor (see main.dart) - the sector
+      // grid's chrome (backgrounds, chart grids/labels, button/text
+      // colors) now properly inverts with the light/dark/system theme
+      // setting. Only the live camera texture itself (CameraPreview,
+      // the optional color-enhance filter, and the brightest/darkest
+      // point markers/overlay drawn on it) stays fixed regardless of
+      // theme - see CameraSectorWidget.
+      //
       // A global SafeArea is also applied in MaterialApp's `builder`
       // (see main.dart) so pushed routes (Settings, the info screens)
       // get the same treatment. This screen additionally wraps its own

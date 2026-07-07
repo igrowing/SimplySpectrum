@@ -29,8 +29,17 @@ class CameraSectorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The idle-state background (only ever visible before the camera is
+    // ready, or on error - the live preview itself always fully covers
+    // this box via BoxFit.cover) follows the theme like the rest of the
+    // sector grid's chrome. The brightest/darkest markers below stay a
+    // fixed black/white regardless: they're annotations drawn directly
+    // on the photographed scene (as documented in Settings: "black
+    // circle = brightest, white circle = darkest"), not app chrome, so
+    // they shouldn't flip with the theme any more than the video itself
+    // does.
     return ColoredBox(
-      color: Colors.black,
+      color: Theme.of(context).colorScheme.surface,
       child: LayoutBuilder(
         builder: (context, constraints) {
           return Stack(
@@ -111,12 +120,19 @@ class CameraSectorWidget extends StatelessWidget {
     final controller = viewModel.repository.controller;
     if (viewModel.errorMessage != null) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(
-            viewModel.errorMessage!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+        child: Builder(
+          builder: (context) => Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              viewModel.errorMessage!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
           ),
         ),
       );

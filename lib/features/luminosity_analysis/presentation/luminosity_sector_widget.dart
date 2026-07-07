@@ -27,8 +27,9 @@ class LuminositySectorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return ColoredBox(
-      color: Colors.black,
+      color: colorScheme.surface,
       child: Stack(
         children: [
           Column(
@@ -38,8 +39,8 @@ class LuminositySectorWidget extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(12, 10, 44, 4),
                 child: Text(
                   _averageLabel(),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: colorScheme.onSurface,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
@@ -52,6 +53,10 @@ class LuminositySectorWidget extends StatelessWidget {
                     painter: LuminosityChartPainter(
                       histogram: histogram,
                       yAxisMax: yAxisMax,
+                      gridColor: colorScheme.onSurface.withValues(alpha: 0.25),
+                      labelColor: colorScheme.onSurface.withValues(
+                        alpha: 0.6,
+                      ),
                     ),
                     size: Size.infinite,
                   ),

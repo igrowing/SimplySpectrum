@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/rendering.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/spectrum_histogram.dart';
@@ -32,6 +32,8 @@ void main() {
         unit: SpectrumUnit.wavelengthNm,
         showPeaks: true,
         yAxisMax: 1,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -46,6 +48,8 @@ void main() {
         unit: SpectrumUnit.frequencyHz,
         showPeaks: true,
         yAxisMax: 1,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       expect(
         () => hzPainter.paint(canvas, const Size(200, 180)),
@@ -68,6 +72,8 @@ void main() {
         unit: SpectrumUnit.wavelengthNm,
         showPeaks: true,
         yAxisMax: 20,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -85,29 +91,55 @@ void main() {
         unit: SpectrumUnit.wavelengthNm,
         showPeaks: false,
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final identical = SpectrumChartPainter(
         histogram: SpectrumHistogram(bins: bins),
         unit: SpectrumUnit.wavelengthNm,
         showPeaks: false,
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final differentUnit = SpectrumChartPainter(
         histogram: SpectrumHistogram(bins: bins),
         unit: SpectrumUnit.frequencyHz,
         showPeaks: false,
         yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
       );
       final differentAxis = SpectrumChartPainter(
         histogram: SpectrumHistogram(bins: bins),
         unit: SpectrumUnit.wavelengthNm,
         showPeaks: false,
         yAxisMax: 20,
+        gridColor: Colors.grey,
+        labelColor: Colors.white,
+      );
+      final differentGrid = SpectrumChartPainter(
+        histogram: SpectrumHistogram(bins: bins),
+        unit: SpectrumUnit.wavelengthNm,
+        showPeaks: false,
+        yAxisMax: 10,
+        gridColor: Colors.blue,
+        labelColor: Colors.white,
+      );
+      final differentLabel = SpectrumChartPainter(
+        histogram: SpectrumHistogram(bins: bins),
+        unit: SpectrumUnit.wavelengthNm,
+        showPeaks: false,
+        yAxisMax: 10,
+        gridColor: Colors.grey,
+        labelColor: Colors.black,
       );
 
       expect(identical.shouldRepaint(base), isFalse);
       expect(differentUnit.shouldRepaint(base), isTrue);
       expect(differentAxis.shouldRepaint(base), isTrue);
+      expect(differentGrid.shouldRepaint(base), isTrue);
+      expect(differentLabel.shouldRepaint(base), isTrue);
     });
   });
 }

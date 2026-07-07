@@ -49,8 +49,8 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   static const double _verticalIconSize = 30;
   static const double _verticalPadding = 12;
 
-  static const TextStyle _labelStyle = TextStyle(
-    color: Colors.white70,
+  static TextStyle _labelStyle(BuildContext context) => TextStyle(
+    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
     fontSize: 8,
     fontWeight: FontWeight.w600,
     letterSpacing: 0.5,
@@ -72,7 +72,8 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   }
 
   /// A main control button with its word label stacked below the icon.
-  Widget _labeledButton({
+  Widget _labeledButton(
+    BuildContext context, {
     required IconData icon,
     required String semanticLabel,
     required String label,
@@ -97,15 +98,20 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
       children: [
         button,
         const SizedBox(height: 3),
-        Text(label, style: _labelStyle),
+        Text(label, style: _labelStyle(context)),
       ],
     );
   }
 
-  List<Widget> _mainButtons(CameraViewModel viewModel, {required bool large}) {
+  List<Widget> _mainButtons(
+    BuildContext context,
+    CameraViewModel viewModel, {
+    required bool large,
+  }) {
     final isFrozen = viewModel.isFrozen;
     return [
       _labeledButton(
+        context,
         icon: Icons.cameraswitch_outlined,
         semanticLabel: 'Swap camera',
         label: 'SWAP',
@@ -113,6 +119,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
         onPressed: viewModel.switchLens,
       ),
       _labeledButton(
+        context,
         icon: viewModel.isTorchOn
             ? Icons.flashlight_on
             : Icons.flashlight_off_outlined,
@@ -123,6 +130,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
         onPressed: viewModel.toggleTorch,
       ),
       _labeledButton(
+        context,
         icon: Icons.camera_alt_outlined,
         semanticLabel: 'Snapshot',
         label: 'SNAP',
@@ -130,6 +138,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
         onPressed: widget.onSnapshot,
       ),
       _labeledButton(
+        context,
         // Material Icons has no dedicated "cancelled snowflake" glyph,
         // so the resumed state reuses the same snowflake with a
         // strike bar drawn over it (see TranslucentIconButton) rather
@@ -179,7 +188,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   Widget build(BuildContext context) {
     final viewModel = widget.viewModel;
     return ColoredBox(
-      color: const Color(0xFF101014),
+      color: Theme.of(context).colorScheme.surface,
       child: Stack(
         children: [
           LayoutBuilder(
@@ -189,7 +198,11 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
               // itself off available constraints rather than raw
               // screen/hardware queries.
               final isVertical = constraints.maxHeight > constraints.maxWidth;
-              final buttons = _mainButtons(viewModel, large: isVertical);
+              final buttons = _mainButtons(
+                context,
+                viewModel,
+                large: isVertical,
+              );
               final grid = _buttonGrid(buttons, large: isVertical);
               final colorStrip = _AverageColorStrip(
                 color: widget.averageColor,
@@ -290,10 +303,14 @@ class _AverageColorStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sampled = color;
+    final colorScheme = Theme.of(context).colorScheme;
     final child = sampled == null
-        ? const Text(
+        ? Text(
             'Detecting color…',
-            style: TextStyle(color: Colors.white54, fontSize: 9),
+            style: TextStyle(
+              color: colorScheme.onSurface.withValues(alpha: 0.54),
+              fontSize: 9,
+            ),
           )
         : _readout(sampled);
 
@@ -302,8 +319,12 @@ class _AverageColorStrip extends StatelessWidget {
       height: vertical ? _averageColorStripThickness : double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       alignment: Alignment.centerLeft,
+      // Once a color has actually been sampled, this fills with that
+      // measured color verbatim - it's real data being displayed, not
+      // chrome, so unlike the "detecting..." idle state above it never
+      // changes with the theme.
       color: sampled == null
-          ? Colors.white10
+          ? colorScheme.onSurface.withValues(alpha: 0.08)
           : Color.fromARGB(255, sampled.r, sampled.g, sampled.b),
       child: child,
     );

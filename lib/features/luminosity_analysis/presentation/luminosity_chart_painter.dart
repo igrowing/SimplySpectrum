@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
 
-/// Draws the live Luminosity sector chart: white polyline histogram on a
-/// black background with a grey grid and Y-axis occurrence-count
-/// labels, and a static black-to-white gradient reference bar
-/// underneath.
+/// Draws the live Luminosity sector chart: an orange polyline histogram
+/// over a themed grid with Y-axis occurrence-count labels, and a static
+/// black-to-white gradient reference bar underneath. The background
+/// itself is left to the parent sector widget's ColoredBox to paint, so
+/// it inverts with the theme along with the rest of the app's chrome.
 ///
 /// The Y axis is normalized against [yAxisMax] rather than the current
 /// frame's own peak bin, so the polyline's height is comparable between
 /// updates; [yAxisMax] itself is expected to change only occasionally
 /// (see `AnalysisViewModel.luminosityAxisMax`), not on every repaint.
 class LuminosityChartPainter extends CustomPainter {
-  LuminosityChartPainter({required this.histogram, required this.yAxisMax});
+  LuminosityChartPainter({
+    required this.histogram,
+    required this.yAxisMax,
+    required this.gridColor,
+    required this.labelColor,
+  });
 
   final LuminosityHistogram histogram;
 
@@ -21,6 +27,14 @@ class LuminosityChartPainter extends CustomPainter {
   /// than the axis) simply clips at the top edge until the next
   /// rescale.
   final int yAxisMax;
+
+  /// Theme-derived chrome colors (see the sector widget), so the grid
+  /// and axis labels properly invert with the light/dark theme. The
+  /// histogram polyline and the black-to-white gradient reference bar
+  /// are substantive data, not chrome, so they keep their own fixed
+  /// colors regardless of theme.
+  final Color gridColor;
+  final Color labelColor;
 
   static const double _gradientBarHeight = 14;
   static const double _yAxisLabelWidth = 34;
@@ -35,7 +49,6 @@ class LuminosityChartPainter extends CustomPainter {
       plotHeight,
     );
 
-    canvas.drawRect(plotRect, Paint()..color = Colors.black);
     _drawGrid(canvas, plotRect);
     _drawYAxisLabels(canvas, plotRect);
     _drawHistogram(canvas, plotRect);
@@ -44,7 +57,7 @@ class LuminosityChartPainter extends CustomPainter {
 
   void _drawGrid(Canvas canvas, Rect rect) {
     final gridPaint = Paint()
-      ..color = Colors.grey.shade700
+      ..color = gridColor
       ..strokeWidth = 1;
     const divisions = 4;
     for (var i = 1; i < divisions; i++) {
@@ -71,7 +84,7 @@ class LuminosityChartPainter extends CustomPainter {
       final painter = TextPainter(
         text: TextSpan(
           text: '${labelValues[i]}\npx',
-          style: const TextStyle(color: Colors.white54, fontSize: 9),
+          style: TextStyle(color: labelColor, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -123,6 +136,8 @@ class LuminosityChartPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant LuminosityChartPainter oldDelegate) {
     return oldDelegate.histogram != histogram ||
-        oldDelegate.yAxisMax != yAxisMax;
+        oldDelegate.yAxisMax != yAxisMax ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.labelColor != labelColor;
   }
 }
