@@ -16,8 +16,12 @@ import 'package:simply_spectrum/features/spectrum_analysis/domain/wavelength_col
 const double _kMinChromaForSpectrum = 0.12;
 
 /// Minimum luma a pixel must have before it's considered for chroma
-/// analysis at all; very dark pixels have unreliable hue.
-const int _kMinLumaForSpectrum = 8;
+/// analysis at all. Very dark pixels have unreliable hue dominated by
+/// sensor noise, and tend to map to the violet end of the spectrum
+/// (the darkest reference colors in the wavelength table). 40 filters
+/// out dark noise while preserving real color signal — a genuinely
+/// colored object under reasonable lighting produces luma well above 40.
+const int _kMinLumaForSpectrum = 40;
 
 /// Every Nth pixel (in both axes) is sampled instead of processing every
 /// pixel, keeping per-frame analysis fast enough to redraw live. A sampled
@@ -127,6 +131,21 @@ FrameAnalysisResult analyzeFrame(
           SpectrumHistogram.binCount - 1,
         );
         spectrumBins[binIndex]++;
+      }
+    }
+  }
+
+  // Cap the first 4 wavelength bins (400-403nm, the violet end where
+  // dark-pixel noise piles up) to the max of all remaining bins, so that
+  // violet-end noise can never dwarf real signal on the chart. Real violet
+  // light still shows up — it just can't exceed the tallest real peak.
+  if (spectrumBins.length > 4) {
+    final realSignalMax = spectrumBins
+        .sublist(4)
+        .fold(0, (max, v) => v > max ? v : max);
+    for (var i = 0; i < 4; i++) {
+      if (spectrumBins[i] > realSignalMax) {
+        spectrumBins[i] = realSignalMax;
       }
     }
   }

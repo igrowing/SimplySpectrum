@@ -41,6 +41,60 @@ RawCameraFrame _uniformFrame({
   );
 }
 
+/// Builds a YUV420 frame where the top [topRows] rows are one color and
+/// the remaining rows are another, for testing multi-color scenarios.
+RawCameraFrame _twoColorFrame({
+  required int width,
+  required int height,
+  required int topRows,
+  required int y1,
+  required int u1,
+  required int v1,
+  required int y2,
+  required int u2,
+  required int v2,
+}) {
+  final yPlane = Uint8List(width * height);
+  final chromaWidth = width ~/ 2;
+  final chromaHeight = height ~/ 2;
+  final uPlane = Uint8List(chromaWidth * chromaHeight);
+  final vPlane = Uint8List(chromaWidth * chromaHeight);
+
+  for (var y = 0; y < height; y++) {
+    final isTop = y < topRows;
+    final yVal = isTop ? y1 : y2;
+    for (var x = 0; x < width; x++) {
+      yPlane[y * width + x] = yVal;
+    }
+  }
+  for (var y = 0; y < chromaHeight; y++) {
+    final isTop = (y * 2) < topRows;
+    for (var x = 0; x < chromaWidth; x++) {
+      uPlane[y * chromaWidth + x] = isTop ? u1 : u2;
+      vPlane[y * chromaWidth + x] = isTop ? v1 : v2;
+    }
+  }
+
+  return RawCameraFrame(
+    width: width,
+    height: height,
+    format: RawFrameFormat.yuv420,
+    planes: [
+      RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
+      RawFramePlane(
+        bytes: uPlane,
+        bytesPerRow: chromaWidth,
+        pixelStride: 1,
+      ),
+      RawFramePlane(
+        bytes: vPlane,
+        bytesPerRow: chromaWidth,
+        pixelStride: 1,
+      ),
+    ],
+  );
+}
+
 void main() {
   group('analyzeFrame', () {
     test('a bright, saturated red frame fills the red end of the spectrum', () {
@@ -151,5 +205,70 @@ void main() {
       expect(result.luminosity.totalOccurrences, 0);
       expect(result.averageColor, isNull);
     });
+
+    test(
+      'a dark colored frame is excluded from the spectrum (luma threshold '
+      'filters sensor noise)',
+      () {
+        // Y=30, U=200, V=128 produces a dim blue-violet with luma ~30
+        // and chroma well above 0.12 — it would have passed the old
+        // luma>=8 threshold but is filtered by luma>=40.
+        final frame = _uniformFrame(
+          width: 32,
+          height: 32,
+          y: 30,
+          u: 200,
+          v: 128,
+        );
+
+        final result = analyzeFrame(frame, sampleStep: 4);
+
+        // Luminosity still records these pixels — only the spectrum
+        // histogram filters by luma.
+        expect(result.luminosity.totalOccurrences, greaterThan(0));
+        expect(result.spectrum.totalOccurrences, 0);
+      },
+    );
+
+    test(
+      'violet-end bins are capped to the max of the remaining bins',
+      () {
+        // A frame that is 75% bright violet (maps to ~400nm) and 25%
+        // bright red (maps to ~650nm). Without the cap, bin 0 would
+        // dwarf every other bin and crush the Y-axis scale.
+        //
+        // Violet: Y=60, U=196, V=179 -> RGB ~(131, 0, 181) -> 400nm
+        // Red:    Y=76, U=85,  V=255 -> RGB ~(254, 0, 0)   -> ~650nm
+        final frame = _twoColorFrame(
+          width: 32,
+          height: 32,
+          topRows: 24,
+          y1: 60,
+          u1: 196,
+          v1: 179, // top 24 rows = violet
+          y2: 76,
+          u2: 85,
+          v2: 255, // bottom 8 rows = red
+        );
+
+        final result = analyzeFrame(frame, sampleStep: 4);
+        final bins = result.spectrum.bins;
+
+        // The violet signal must still be present (not zeroed).
+        expect(bins[0], greaterThan(0));
+
+        // The red signal must be present in the ~645nm region.
+        const redBin = 645 - 400; // bin index 245
+        expect(bins[redBin], greaterThan(0));
+
+        // After capping, no bin 0-3 may exceed the max of bins 4+.
+        final realSignalMax = bins
+            .sublist(4)
+            .fold(0, (max, v) => v > max ? v : max);
+        for (var i = 0; i < 4; i++) {
+          expect(bins[i], lessThanOrEqualTo(realSignalMax));
+        }
+      },
+    );
   });
 }
