@@ -44,3 +44,8 @@ It's free, it's fast, and it turns the phone you already carry into a tool you n
 - **Artists & designers** studying how colors and pigments really work
 - **Makers & DIYers** experimenting with LEDs, filters, and light sources
 - **Anyone** who ever looked at something colorful and thought "but what's it *actually* made of?"
+
+## How to contribute
+
+* [Open an issue](https://github.com/igrowing/SimplySpectrum/issues) if you found a bug or want a new feature.
+* If you like the app and it makes your life a bit simpler <a href="https://www.buymeacoffee.com/igrowing" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
