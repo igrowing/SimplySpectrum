@@ -6,7 +6,7 @@ import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_mo
 import 'package:simply_spectrum/features/frame_analysis/domain/color_conversions.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_screen.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:simply_spectrum/core/services/platform_service.dart';
 
 /// The "thickness" of the average-color strip: its height when it spans
 /// the sector's full width (vertical layout), or its width when it spans
@@ -58,7 +58,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
 
   Future<void> _toggleKeepScreenOn() async {
     final next = !_keepScreenOn;
-    await WakelockPlus.toggle(enable: next);
+    await PlatformService.setWakelock(next);
     if (mounted) setState(() => _keepScreenOn = next);
   }
 
@@ -66,7 +66,7 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   void dispose() {
     // Never leave the screen forced on after this sector is torn down.
     if (_keepScreenOn) {
-      unawaited(WakelockPlus.disable());
+      unawaited(PlatformService.setWakelock(false));
     }
     super.dispose();
   }

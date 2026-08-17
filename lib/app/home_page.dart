@@ -34,9 +34,11 @@ class _HomePageState extends State<HomePage> {
   Future<void> _handleSnapshot(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await sl<SnapshotRepository>().captureAndSave(_screenBoundaryKey);
+      final savedTo = await sl<SnapshotRepository>().captureAndSave(
+        _screenBoundaryKey,
+      );
       messenger.showSnackBar(
-        const SnackBar(content: Text('Snapshot saved to gallery')),
+        SnackBar(content: Text('Snapshot saved to $savedTo')),
       );
     } on SnapshotFailure catch (error) {
       sl<AppLogger>().warning('Snapshot failed: ${error.message}');

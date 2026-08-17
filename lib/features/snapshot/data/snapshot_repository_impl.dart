@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart' as ph;
 
 import 'package:simply_spectrum/core/error/failure.dart';
 import 'package:simply_spectrum/core/logging/app_logger.dart';
+import 'package:simply_spectrum/core/services/platform_service.dart';
 import 'package:simply_spectrum/features/snapshot/domain/snapshot_repository.dart';
 
 /// Saves a full-screen snapshot to the device photo gallery using `gal`.
@@ -17,7 +18,7 @@ class SnapshotRepositoryImpl implements SnapshotRepository {
   final AppLogger _logger;
 
   @override
-  Future<void> captureAndSave(GlobalKey boundaryKey) async {
+  Future<String> captureAndSave(GlobalKey boundaryKey) async {
     final renderObject = boundaryKey.currentContext?.findRenderObject();
     if (renderObject is! RenderRepaintBoundary) {
       throw const SnapshotFailure(
@@ -35,7 +36,15 @@ class SnapshotRepositoryImpl implements SnapshotRepository {
       }
 
       final bytes = byteData.buffer.asUint8List();
-      await Gal.putImageBytes(bytes, album: 'SimplySpectrum');
+      final fileName = _generateFileName();
+      await Gal.putImageBytes(
+        bytes,
+        album: 'SimplySpectrum',
+        name: fileName,
+      );
+
+      // Build the full path/message for the SnackBar.
+      return await _buildSavePath(fileName);
     } on SnapshotFailure {
       rethrow;
     } catch (error, stackTrace) {
@@ -48,11 +57,38 @@ class SnapshotRepositoryImpl implements SnapshotRepository {
     }
   }
 
+  /// Generates a unique, timestamp-based file name (no extension).
+  String _generateFileName() {
+    final now = DateTime.now();
+    return 'spectrum_${now.year}${_two(now.month)}${_two(now.day)}_'
+        '${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
+  }
+
+  String _two(int n) => n.toString().padLeft(2, '0');
+
+  /// Builds the full path string shown to the user.
+  ///
+  /// On Android, queries the native Pictures directory and appends the
+  /// album subfolder + filename: e.g.
+  /// `/storage/emulated/0/Pictures/SimplySpectrum/spectrum_20260817_201400.png`.
+  ///
+  /// On iOS, `PlatformService.getGalleryPath()` returns a label like
+  /// `Photos album "SimplySpectrum"` since Photo Library assets don't
+  /// have a file-system path; the filename is appended for context.
+  Future<String> _buildSavePath(String fileName) async {
+    final galleryPath = await PlatformService.getGalleryPath();
+    if (Platform.isAndroid) {
+      return '$galleryPath/SimplySpectrum/$fileName.png';
+    }
+    // iOS: galleryPath is a descriptive label, not a directory.
+    return '$galleryPath/$fileName.png';
+  }
+
   /// Ensures the app has permission to write to the device photo gallery.
   ///
   /// On Android, uses `permission_handler` instead of `gal`'s built-in
   /// permission flow. `gal` only requests `WRITE_EXTERNAL_STORAGE` alone,
-  /// which fails silently on some Android 9/10 OEM ROMs \u2014 the system
+  /// which fails silently on some Android 9/10 OEM ROMs — the system
   /// dialog appears and the user taps "Allow", but the permission is
   /// never actually granted, so `Gal.hasAccess()` stays false forever.
   /// `permission_handler` requests both `READ_EXTERNAL_STORAGE` and

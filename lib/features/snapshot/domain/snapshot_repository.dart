@@ -8,5 +8,7 @@ import 'package:flutter/widgets.dart';
 /// since screenshotting is inherently a rendering-tree concern, unlike the
 /// analysis domains which stay pure Dart.
 abstract class SnapshotRepository {
-  Future<void> captureAndSave(GlobalKey boundaryKey);
+  /// Captures and saves the snapshot, returning the full path (or
+  /// descriptive label on iOS) where the image was saved.
+  Future<String> captureAndSave(GlobalKey boundaryKey);
 }
