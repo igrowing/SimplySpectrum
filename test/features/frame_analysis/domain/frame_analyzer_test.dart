@@ -314,6 +314,71 @@ void main() {
       expect(darkest.meanLuma, closeTo(45, 10));
     });
 
+    test(
+      'a big region with a black core beats a small uniformly-dim patch',
+      () {
+        const width = 160;
+        const height = 160;
+        final yPlane = Uint8List(width * height)
+          ..fillRange(0, width * height, 86);
+
+        // Region A: large, mean slightly higher, but with a genuinely
+        // black core - like a deep shadow under a desk broken up by
+        // brighter clutter.
+        for (var y = 40; y < 100; y++) {
+          for (var x = 30; x < 90; x++) {
+            yPlane[y * width + x] = 13;
+          }
+        }
+        for (var y = 60; y < 80; y++) {
+          for (var x = 50; x < 70; x++) {
+            yPlane[y * width + x] = 6; // black core, centered ~(60, 70)
+          }
+        }
+
+        // Region B: smaller, uniformly dim with a *lower mean* than A but
+        // no truly-black cell - like a shadowed shelf cubby. Must not win.
+        for (var y = 40; y < 64; y++) {
+          for (var x = 110; x < 134; x++) {
+            yPlane[y * width + x] = 11;
+          }
+        }
+
+        const chromaWidth = width ~/ 2;
+        const chromaHeight = height ~/ 2;
+        final neutral = Uint8List(chromaWidth * chromaHeight)
+          ..fillRange(0, chromaWidth * chromaHeight, 128);
+        final frame = RawCameraFrame(
+          width: width,
+          height: height,
+          format: RawFrameFormat.yuv420,
+          planes: [
+            RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
+            RawFramePlane(
+              bytes: neutral,
+              bytesPerRow: chromaWidth,
+              pixelStride: 1,
+            ),
+            RawFramePlane(
+              bytes: neutral,
+              bytesPerRow: chromaWidth,
+              pixelStride: 1,
+            ),
+          ],
+        );
+
+        final darkest = analyzeFrame(
+          frame,
+          locateDarkestPoint: true,
+        ).darkestRegion;
+
+        expect(darkest, isNotNull);
+        // Marker sits on region A's black core, not region B.
+        expect(darkest!.point.normalizedX, closeTo(60 / width, 0.1));
+        expect(darkest.point.normalizedY, closeTo(70 / height, 0.1));
+      },
+    );
+
     test('non-yuv420 frames return empty histograms rather than throwing', () {
       final frame = RawCameraFrame(
         width: 4,

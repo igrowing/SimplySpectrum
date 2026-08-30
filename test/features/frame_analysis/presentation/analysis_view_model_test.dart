@@ -226,7 +226,7 @@ void main() {
         }
 
         // Lock onto a bright region in the top-left quadrant.
-        final topLeft = _blockFrame(x0: 8, y0: 8);
+        final topLeft = _blockFrame(x0: 14, y0: 14);
         await analyze(topLeft);
         await analyze(topLeft);
         final locked = viewModel.brightestPoint!;
@@ -235,7 +235,7 @@ void main() {
 
         // A single frame with an equally-bright region in the opposite
         // corner must NOT move the marker (unconfirmed challenger).
-        final bottomRight = _blockFrame(x0: 64, y0: 64);
+        final bottomRight = _blockFrame(x0: 58, y0: 58);
         await analyze(bottomRight);
         expect(viewModel.brightestPoint!.normalizedX, lessThan(0.5));
         expect(viewModel.brightestPoint!.normalizedY, lessThan(0.5));

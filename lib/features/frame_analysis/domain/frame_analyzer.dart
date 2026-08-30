@@ -41,15 +41,21 @@ const int kDefaultSampleStep = 8;
 const int kExtremesGridCols = 40;
 
 /// Fraction of the frame trimmed off *each* edge before brightest/darkest
-/// region detection. The raw Y plane routinely has a near-black band along
-/// one or more edges - row-alignment padding rows the plugin still counts
-/// in `height`, un-cropped ISP "optical black" rows, lens-mount
-/// vignetting - which would otherwise register as a large, very dark
-/// region and capture the darkest marker (and drag the mask threshold
-/// down so real dark features fall outside it). The genuine darkest/
-/// brightest spot a user cares about is never in the outer few percent of
-/// the frame, so trimming it is pure upside.
-const double _kExtremesEdgeInset = 0.04;
+/// region detection. Two reasons:
+///
+///  * The raw Y plane routinely has a near-black band along one or more
+///    edges - row-alignment padding rows the plugin still counts in
+///    `height`, un-cropped ISP "optical black" rows, lens-mount
+///    vignetting - which would otherwise register as a large very dark
+///    region and capture the darkest marker (and drag the mask threshold
+///    down so real dark features fall outside it).
+///  * The live preview is `BoxFit.cover`, so a strip on two edges of the
+///    frame is cropped off screen entirely. A spot detected there would
+///    get a marker that's clipped or invisible.
+///
+/// The genuine darkest/brightest spot a user cares about is well inside
+/// the frame, so trimming a 10% border is pure upside.
+const double _kExtremesEdgeInset = 0.10;
 
 /// A grid cell joins the bright (or dark) mask when its mean luma is
 /// within `max(_kExtremesMinMargin, range * _kExtremesMarginFrac)` of the
@@ -191,7 +197,7 @@ FrameAnalysisResult analyzeFrame(
 //     noise and specular sparkle before any argmax.
 //  D  Threshold near the most extreme cell, label 4-connected components,
 //     and (past a minimum-size gate that rejects lone noise cells) pick
-//     the component whose mean luma is the most extreme.
+//     the component that contains the most extreme cell.
 //  E  Position the marker at the luma-weighted centroid of the most
 //     extreme cells *within that one component* - never a global centroid,
 //     which would land between two separate regions.
@@ -381,17 +387,24 @@ FrameExtreme? _detectExtreme(
   var pool = components.where((c) => c.length >= minRegionCells).toList();
   if (pool.isEmpty) pool = components;
 
-  // Step D: among the survivors, the region whose mean luma is most
-  // extreme - so a small bright lamp still beats a large dimly-lit wall.
+  // Step D: among the survivors, the region that *contains* the most
+  // extreme cell wins - i.e. the darkest/brightest spot is wherever the
+  // single darkest/brightest area is, as long as that area is part of a
+  // large-enough region. Selecting by region *mean* instead would let a
+  // small, uniformly-dim patch (e.g. a shadowed shelf) beat a big region
+  // that has a genuinely black core but is broken up by brighter clutter
+  // (e.g. the deep shadow under a desk) - which testers reported as
+  // "misdetected".
   var best = pool.first;
-  var bestMean = _regionMean(best, mean);
+  var bestExtremeCell = _regionExtremeCell(best, mean, bright: bright);
   for (final component in pool.skip(1)) {
-    final m = _regionMean(component, mean);
-    if (bright ? m > bestMean : m < bestMean) {
+    final e = _regionExtremeCell(component, mean, bright: bright);
+    if (bright ? e > bestExtremeCell : e < bestExtremeCell) {
       best = component;
-      bestMean = m;
+      bestExtremeCell = e;
     }
   }
+  final bestMean = _regionMean(best, mean);
 
   // Step E: luma-weighted centroid over the whole region. Weighting each
   // cell by the square of its margin past the mask threshold pulls the
@@ -475,6 +488,22 @@ double _regionMean(List<int> cells, List<double> mean) {
     sum += mean[cell];
   }
   return sum / cells.length;
+}
+
+/// The most extreme (highest for [bright], lowest otherwise) cell mean in
+/// a region.
+double _regionExtremeCell(
+  List<int> cells,
+  List<double> mean, {
+  required bool bright,
+}) {
+  var extreme = bright ? 0.0 : 255.0;
+  for (final cell in cells) {
+    final m = mean[cell];
+    if (m < 0) continue;
+    if (bright ? m > extreme : m < extreme) extreme = m;
+  }
+  return extreme;
 }
 
 /// Rotates (and mirrors) an axis-aligned rect from raw sensor-normalized
