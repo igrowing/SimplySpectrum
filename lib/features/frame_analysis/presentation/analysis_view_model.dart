@@ -5,6 +5,7 @@ import 'package:simply_spectrum/features/camera_feed/domain/camera_repository.da
 import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analyzer.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/frame_extreme.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
@@ -96,12 +97,21 @@ class AnalysisViewModel extends ChangeNotifier {
   /// updated every [kAxisRescaleInterval] (see [_rescaleAxes]).
   int luminosityAxisMax = 1;
 
+  final _ExtremeSmoother _brightestSmoother = _ExtremeSmoother();
+  final _ExtremeSmoother _darkestSmoother = _ExtremeSmoother();
+
   /// Called whenever the Settings screen's values change, so the next
   /// analyzed frame picks up the new options.
   set settings(AppSettings settings) {
     final wasEnabled = _settings.showExtremeLightSpots;
+    final nowEnabled = settings.showExtremeLightSpots;
     _settings = settings;
-    if (wasEnabled && !settings.showExtremeLightSpots) {
+    if (wasEnabled == nowEnabled) return;
+    // Toggling the feature either way discards any smoothing state so a
+    // stale committed region can't linger into the next enable.
+    _brightestSmoother.reset();
+    _darkestSmoother.reset();
+    if (wasEnabled && !nowEnabled) {
       brightestPoint = null;
       darkestPoint = null;
       notifyListeners();
@@ -132,8 +142,10 @@ class AnalysisViewModel extends ChangeNotifier {
       luminosity = result.luminosity;
       averageColor = result.averageColor ?? averageColor;
       if (locateExtremes) {
-        brightestPoint = result.brightestPoint ?? brightestPoint;
-        darkestPoint = result.darkestPoint ?? darkestPoint;
+        _brightestSmoother.update(result.brightestRegion, bright: true);
+        _darkestSmoother.update(result.darkestRegion, bright: false);
+        brightestPoint = _brightestSmoother.displayed;
+        darkestPoint = _darkestSmoother.displayed;
       }
       // Seed the Y-axis scale from the very first analyzed frame rather
       // than leaving it at the placeholder value of 1 until the first
@@ -172,4 +184,124 @@ class AnalysisViewModel extends ChangeNotifier {
     _axisRescaleTimer?.cancel();
     super.dispose();
   }
+}
+
+/// Confirm-before-jump + EMA smoother for one extreme-light marker.
+///
+/// [analyzeFrame] re-runs a full global search every analysis (~2 Hz) and
+/// its raw output hops between competing bright/dark regions frame to
+/// frame - which the beta testers reported as the marker "jumping like
+/// crazy". This holds a single *committed* region and:
+///
+///  * eases the marker toward the freshly detected centroid with an
+///    exponential moving average while the detection stays in that region
+///    (small, smooth corrections);
+///  * relocates to a different region only once a challenger region has
+///    persisted for [_confirmFrames] consecutive analyses, OR is
+///    dramatically more extreme than the committed one (so pointing the
+///    camera at a new bright light still snaps promptly).
+class _ExtremeSmoother {
+  /// Per-analysis fraction of the remaining distance the marker moves
+  /// toward the detected centroid while staying within the committed
+  /// region.
+  static const double _emaAlpha = 0.35;
+
+  /// Larger step used the frame a relocation to a new region is
+  /// committed - decisive but still eased rather than an instant teleport.
+  static const double _jumpAlpha = 0.6;
+
+  /// Consecutive analyses a challenger region must win before the marker
+  /// relocates to it.
+  static const int _confirmFrames = 2;
+
+  /// A challenger whose mean luma beats the committed region's by at
+  /// least this much (brighter for the bright marker, darker for the
+  /// dark one) is adopted immediately, skipping [_confirmFrames].
+  static const double _dramaticLumaDelta = 25;
+
+  /// Minimum [NormalizedRect.overlapFraction] (after inflating both by
+  /// [_matchInflate]) for two detections to count as the same region.
+  static const double _overlapToMatch = 0.25;
+
+  /// Normalized amount each region rect is grown by before overlap
+  /// testing, so a region that merely shifts by a cell still matches.
+  static const double _matchInflate = 0.03;
+
+  FramePoint? _displayed;
+  NormalizedRect? _committed;
+  double _committedMeanLuma = 0;
+  NormalizedRect? _candidate;
+  int _candidateStreak = 0;
+
+  /// The smoothed marker position to show, or null before the first
+  /// detection (or after [reset]).
+  FramePoint? get displayed => _displayed;
+
+  void reset() {
+    _displayed = null;
+    _committed = null;
+    _committedMeanLuma = 0;
+    _candidate = null;
+    _candidateStreak = 0;
+  }
+
+  void update(FrameExtreme? detection, {required bool bright}) {
+    if (detection == null) return; // Nothing detected: hold last position.
+
+    final region = detection.bounds;
+
+    if (_committed == null || _displayed == null) {
+      _commit(detection, snap: true);
+      return;
+    }
+
+    if (_sameRegion(_committed!, region)) {
+      // Same region: track its slow drift and ease the marker in.
+      _committed = NormalizedRect.lerp(_committed!, region, _emaAlpha);
+      _committedMeanLuma = detection.meanLuma;
+      _displayed = _lerpPoint(_displayed!, detection.point, _emaAlpha);
+      _candidate = null;
+      _candidateStreak = 0;
+      return;
+    }
+
+    final dramatic = bright
+        ? detection.meanLuma >= _committedMeanLuma + _dramaticLumaDelta
+        : detection.meanLuma <= _committedMeanLuma - _dramaticLumaDelta;
+    if (dramatic) {
+      _commit(detection, snap: false);
+      return;
+    }
+
+    if (_candidate != null && _sameRegion(_candidate!, region)) {
+      _candidateStreak++;
+    } else {
+      _candidate = region;
+      _candidateStreak = 1;
+    }
+    if (_candidateStreak >= _confirmFrames) {
+      _commit(detection, snap: false);
+    }
+    // Otherwise: unconfirmed challenger - leave the marker where it is.
+  }
+
+  void _commit(FrameExtreme detection, {required bool snap}) {
+    _committed = detection.bounds;
+    _committedMeanLuma = detection.meanLuma;
+    _displayed = (snap || _displayed == null)
+        ? detection.point
+        : _lerpPoint(_displayed!, detection.point, _jumpAlpha);
+    _candidate = null;
+    _candidateStreak = 0;
+  }
+
+  bool _sameRegion(NormalizedRect a, NormalizedRect b) =>
+      a.inflated(_matchInflate).overlapFraction(b.inflated(_matchInflate)) >=
+      _overlapToMatch;
+
+  FramePoint _lerpPoint(FramePoint a, FramePoint b, double t) => FramePoint(
+    normalizedX: a.normalizedX + (b.normalizedX - a.normalizedX) * t,
+    normalizedY: a.normalizedY + (b.normalizedY - a.normalizedY) * t,
+    luma: (a.luma + (b.luma - a.luma) * t).round(),
+  );
 }

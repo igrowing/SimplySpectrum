@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/frame_extreme.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/point_rotation.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
@@ -23,12 +24,39 @@ const double _kMinChromaForSpectrum = 0.12;
 /// colored object under reasonable lighting produces luma well above 40.
 const int _kMinLumaForSpectrum = 40;
 
-/// Every Nth pixel (in both axes) is sampled instead of processing every
-/// pixel, keeping per-frame analysis fast enough to redraw live. A sampled
-/// cell covers `sampleStep * sampleStep` source pixels, comfortably above
-/// the "at least 20 sq. pixels" requirement for brightest/darkest point
-/// detection when sampleStep >= 5.
+/// Every Nth pixel (in both axes) is sampled for the spectrum/luminosity
+/// histograms and average color instead of processing every pixel,
+/// keeping per-frame analysis fast enough to redraw live. (Brightest/
+/// darkest region detection does NOT use this grid - see
+/// [_locateExtremes].)
 const int kDefaultSampleStep = 8;
+
+/// Target column count of the coarse luma grid used for brightest/darkest
+/// *region* detection. The Y plane is box-filtered down to roughly this
+/// many columns (and a proportional number of rows); each grid cell is
+/// the mean luma over every source pixel it covers - on a real >=480p
+/// frame one cell already spans far more than the "at least 20 sq.
+/// pixels" the feature requires, so noise, hot pixels and specular
+/// sparkle are averaged out before any argmax/argmin is taken.
+const int kExtremesGridCols = 40;
+
+/// Fraction of the frame trimmed off *each* edge before brightest/darkest
+/// region detection. The raw Y plane routinely has a near-black band along
+/// one or more edges - row-alignment padding rows the plugin still counts
+/// in `height`, un-cropped ISP "optical black" rows, lens-mount
+/// vignetting - which would otherwise register as a large, very dark
+/// region and capture the darkest marker (and drag the mask threshold
+/// down so real dark features fall outside it). The genuine darkest/
+/// brightest spot a user cares about is never in the outer few percent of
+/// the frame, so trimming it is pure upside.
+const double _kExtremesEdgeInset = 0.04;
+
+/// A grid cell joins the bright (or dark) mask when its mean luma is
+/// within `max(_kExtremesMinMargin, range * _kExtremesMarginFrac)` of the
+/// most extreme cell, where `range` is max-minus-min cell mean over the
+/// whole grid.
+const double _kExtremesMarginFrac = 0.10;
+const double _kExtremesMinMargin = 6;
 
 /// How much [_enhance] scales each channel's distance from its pixel's
 /// own max channel when "Enhance colors" is on. Exposed (not private) so
@@ -70,13 +98,6 @@ FrameAnalysisResult analyzeFrame(
   final spectrumBins = List<int>.filled(SpectrumHistogram.binCount, 0);
   final luminosityBins = List<int>.filled(kLumaBinCount, 0);
 
-  int? brightestLuma;
-  var brightestX = 0;
-  var brightestY = 0;
-  int? darkestLuma;
-  var darkestX = 0;
-  var darkestY = 0;
-
   var sampleCount = 0;
   var rSum = 0;
   var gSum = 0;
@@ -111,18 +132,6 @@ FrameAnalysisResult analyzeFrame(
       final luma = _lumaFromRgb(rgb[0], rgb[1], rgb[2]);
       luminosityBins[luma]++;
 
-      if (locateBrightestPoint &&
-          (brightestLuma == null || luma > brightestLuma)) {
-        brightestLuma = luma;
-        brightestX = x;
-        brightestY = y;
-      }
-      if (locateDarkestPoint && (darkestLuma == null || luma < darkestLuma)) {
-        darkestLuma = luma;
-        darkestX = x;
-        darkestY = y;
-      }
-
       if (_chromaOf(rgb[0], rgb[1], rgb[2]) >= _kMinChromaForSpectrum &&
           luma >= _kMinLumaForSpectrum) {
         final nm = nearestWavelengthForRgb(rgb[0], rgb[1], rgb[2]);
@@ -150,6 +159,13 @@ FrameAnalysisResult analyzeFrame(
     }
   }
 
+  final extremes = _locateExtremes(
+    yPlane,
+    frame: frame,
+    locateBrightest: locateBrightestPoint,
+    locateDarkest: locateDarkestPoint,
+  );
+
   return FrameAnalysisResult(
     spectrum: SpectrumHistogram(bins: spectrumBins),
     luminosity: LuminosityHistogram(bins: luminosityBins),
@@ -160,42 +176,339 @@ FrameAnalysisResult analyzeFrame(
             g: (gSum / sampleCount).round().clamp(0, 255),
             b: (bSum / sampleCount).round().clamp(0, 255),
           ),
-    brightestPoint: brightestLuma == null
-        ? null
-        : _toDisplayPoint(
-            rawX: brightestX / frame.width,
-            rawY: brightestY / frame.height,
-            luma: brightestLuma,
-            frame: frame,
-          ),
-    darkestPoint: darkestLuma == null
-        ? null
-        : _toDisplayPoint(
-            rawX: darkestX / frame.width,
-            rawY: darkestY / frame.height,
-            luma: darkestLuma,
-            frame: frame,
-          ),
+    brightestRegion: extremes?.brightest,
+    darkestRegion: extremes?.darkest,
   );
 }
 
-/// Converts a point expressed in raw sensor-buffer-normalized coordinates
-/// into the space the displayed, auto-rotated `CameraPreview` uses, so
-/// overlays land on the feature they're meant to mark rather than
-/// drifting to wherever the unrotated raw buffer put it.
-FramePoint _toDisplayPoint({
-  required double rawX,
-  required double rawY,
-  required int luma,
+// ===========================================================================
+// Brightest / darkest region detection (A + D + E, on the raw Y plane).
+//
+//  A  Box-filter the Y plane (minus a _kExtremesEdgeInset border, which
+//     is usually padding / optical-black / vignetting rather than scene)
+//     down to a coarse grid of per-cell mean luma, so every candidate is
+//     an *area* mean rather than one pixel - kills hot pixels, sensor
+//     noise and specular sparkle before any argmax.
+//  D  Threshold near the most extreme cell, label 4-connected components,
+//     and (past a minimum-size gate that rejects lone noise cells) pick
+//     the component whose mean luma is the most extreme.
+//  E  Position the marker at the luma-weighted centroid of the most
+//     extreme cells *within that one component* - never a global centroid,
+//     which would land between two separate regions.
+//
+//  F  Reads the Y plane directly (Y already *is* luma) instead of the
+//     YUV->RGB->luma round trip the histogram loop uses.
+//  I  Independent of the "Enhance colors" setting - detection always runs
+//     on the unmodified sensor luma.
+// ===========================================================================
+
+/// One box-filtered luma grid: `cols * rows` cells, each holding the mean
+/// luma over the source pixels it covers (or a negative sentinel if the
+/// cell somehow received no samples).
+///
+/// The grid covers only the analysed region of interest - the frame with
+/// [_kExtremesEdgeInset] trimmed off each edge - so [roiLeft]..[roiBottom]
+/// (normalized 0..1 in the *full* frame) are needed to map a cell back to
+/// full-frame coordinates.
+class _LumaGrid {
+  _LumaGrid(
+    this.cols,
+    this.rows, {
+    required this.roiLeft,
+    required this.roiTop,
+    required this.roiRight,
+    required this.roiBottom,
+  }) : mean = List<double>.filled(cols * rows, 0);
+
+  final int cols;
+  final int rows;
+  final List<double> mean;
+  final double roiLeft;
+  final double roiTop;
+  final double roiRight;
+  final double roiBottom;
+
+  double get roiWidth => roiRight - roiLeft;
+  double get roiHeight => roiBottom - roiTop;
+}
+
+({FrameExtreme? brightest, FrameExtreme? darkest})? _locateExtremes(
+  RawFramePlane yPlane, {
   required RawCameraFrame frame,
+  required bool locateBrightest,
+  required bool locateDarkest,
 }) {
-  final display = rotatePointToDisplaySpace(
-    x: rawX,
-    y: rawY,
+  if (!locateBrightest && !locateDarkest) return null;
+  final grid = _buildLumaGrid(yPlane, frame.width, frame.height);
+  if (grid == null) return null;
+  return (
+    brightest: locateBrightest
+        ? _detectExtreme(grid, frame: frame, bright: true)
+        : null,
+    darkest: locateDarkest
+        ? _detectExtreme(grid, frame: frame, bright: false)
+        : null,
+  );
+}
+
+/// Step A: reduce the analysed region (the frame minus a
+/// [_kExtremesEdgeInset] border on every side) to a `~kExtremesGridCols`-
+/// wide grid of per-cell mean luma, reading *every* source pixel in that
+/// region exactly once.
+_LumaGrid? _buildLumaGrid(RawFramePlane yPlane, int width, int height) {
+  if (width < 2 || height < 2) return null;
+
+  // Region of interest: trim the border unless the frame is too small for
+  // the trim to leave a usable area (keeps tiny synthetic test frames
+  // working).
+  var insetX = (width * _kExtremesEdgeInset).round();
+  var insetY = (height * _kExtremesEdgeInset).round();
+  if (width - 2 * insetX < 8 || height - 2 * insetY < 8) {
+    insetX = 0;
+    insetY = 0;
+  }
+  final roiX0 = insetX;
+  final roiY0 = insetY;
+  final roiWidth = width - 2 * insetX;
+  final roiHeight = height - 2 * insetY;
+
+  final cols = roiWidth < kExtremesGridCols ? roiWidth : kExtremesGridCols;
+  final rows = roiHeight < kExtremesGridCols
+      ? roiHeight
+      : math.max(
+          1,
+          math.min(roiHeight, (kExtremesGridCols * roiHeight) ~/ roiWidth),
+        );
+
+  final cellCount = cols * rows;
+  final sums = List<int>.filled(cellCount, 0);
+  final counts = List<int>.filled(cellCount, 0);
+
+  // Per-column cell index (indexed by offset within the ROI), hoisted out
+  // of the inner loop to avoid a divide per source pixel.
+  final colOfX = List<int>.generate(roiWidth, (i) => (i * cols) ~/ roiWidth);
+
+  final bytes = yPlane.bytes;
+  final bytesPerRow = yPlane.bytesPerRow;
+  final pixelStride = yPlane.pixelStride;
+  for (var y = roiY0; y < roiY0 + roiHeight; y++) {
+    final rowBase = (((y - roiY0) * rows) ~/ roiHeight) * cols;
+    final lineBase = y * bytesPerRow;
+    for (var x = roiX0; x < roiX0 + roiWidth; x++) {
+      final index = lineBase + x * pixelStride;
+      if (index >= bytes.length) continue;
+      final cell = rowBase + colOfX[x - roiX0];
+      sums[cell] += bytes[index];
+      counts[cell]++;
+    }
+  }
+
+  final grid = _LumaGrid(
+    cols,
+    rows,
+    roiLeft: roiX0 / width,
+    roiTop: roiY0 / height,
+    roiRight: (roiX0 + roiWidth) / width,
+    roiBottom: (roiY0 + roiHeight) / height,
+  );
+  for (var i = 0; i < cellCount; i++) {
+    grid.mean[i] = counts[i] == 0 ? -1.0 : sums[i] / counts[i];
+  }
+  return grid;
+}
+
+/// Steps D + E: turn the coarse grid into a single bright (or dark)
+/// region and its marker point.
+FrameExtreme? _detectExtreme(
+  _LumaGrid grid, {
+  required RawCameraFrame frame,
+  required bool bright,
+}) {
+  final cols = grid.cols;
+  final rows = grid.rows;
+  final mean = grid.mean;
+  final cellCount = cols * rows;
+
+  var extreme = bright ? -1.0 : 256.0;
+  var lo = 256.0;
+  var hi = -1.0;
+  for (var i = 0; i < cellCount; i++) {
+    final m = mean[i];
+    if (m < 0) continue;
+    if (m < lo) lo = m;
+    if (m > hi) hi = m;
+    if (bright ? m > extreme : m < extreme) extreme = m;
+  }
+  if (hi < 0) return null; // No valid cells at all.
+
+  final margin = math.max(
+    _kExtremesMinMargin,
+    (hi - lo) * _kExtremesMarginFrac,
+  );
+  final threshold = bright ? extreme - margin : extreme + margin;
+  bool inMask(int cell) {
+    final m = mean[cell];
+    return m >= 0 && (bright ? m >= threshold : m <= threshold);
+  }
+
+  // Step D: 4-connected components over the masked cells.
+  final labels = List<int>.filled(cellCount, -1);
+  final components = <List<int>>[];
+  final stack = <int>[];
+  for (var start = 0; start < cellCount; start++) {
+    if (labels[start] != -1 || !inMask(start)) continue;
+    final label = components.length;
+    final component = <int>[];
+    labels[start] = label;
+    stack.add(start);
+    while (stack.isNotEmpty) {
+      final cell = stack.removeLast();
+      component.add(cell);
+      final cx = cell % cols;
+      final cy = cell ~/ cols;
+      if (cx > 0) _visit(cell - 1, label, labels, stack, inMask);
+      if (cx < cols - 1) _visit(cell + 1, label, labels, stack, inMask);
+      if (cy > 0) _visit(cell - cols, label, labels, stack, inMask);
+      if (cy < rows - 1) _visit(cell + cols, label, labels, stack, inMask);
+    }
+    components.add(component);
+  }
+  if (components.isEmpty) return null;
+
+  // Gate out lone noise cells; fall back to all components only if the
+  // gate would leave nothing.
+  final minRegionCells = math.max(2, cellCount ~/ 400);
+  var pool = components.where((c) => c.length >= minRegionCells).toList();
+  if (pool.isEmpty) pool = components;
+
+  // Step D: among the survivors, the region whose mean luma is most
+  // extreme - so a small bright lamp still beats a large dimly-lit wall.
+  var best = pool.first;
+  var bestMean = _regionMean(best, mean);
+  for (final component in pool.skip(1)) {
+    final m = _regionMean(component, mean);
+    if (bright ? m > bestMean : m < bestMean) {
+      best = component;
+      bestMean = m;
+    }
+  }
+
+  // Step E: luma-weighted centroid over the whole region. Weighting each
+  // cell by the square of its margin past the mask threshold pulls the
+  // marker toward the region's hot/cold core when there's a gradient,
+  // while a uniform region reduces to its geometric centre (rather than
+  // an arbitrary subset of equally-extreme cells).
+  var weightSum = 0.0;
+  var weightedX = 0.0;
+  var weightedY = 0.0;
+  var coreLuma = bright ? 0.0 : 255.0;
+  for (final cell in best) {
+    final m = mean[cell];
+    var margin = bright ? m - threshold : threshold - m;
+    if (margin < 1) margin = 1;
+    final weight = margin * margin;
+    weightSum += weight;
+    weightedX += weight * (cell % cols + 0.5);
+    weightedY += weight * (cell ~/ cols + 0.5);
+    if (bright ? m > coreLuma : m < coreLuma) coreLuma = m;
+  }
+  // Grid coordinates are normalized within the ROI; map them back to the
+  // full frame before rotation.
+  double toFrameX(double roiNormX) => grid.roiLeft + grid.roiWidth * roiNormX;
+  double toFrameY(double roiNormY) => grid.roiTop + grid.roiHeight * roiNormY;
+
+  final rawCentroidX = toFrameX(weightedX / weightSum / cols);
+  final rawCentroidY = toFrameY(weightedY / weightSum / rows);
+
+  // Region bounding box, in raw grid-normalized coordinates.
+  var minCol = cols;
+  var maxCol = -1;
+  var minRow = rows;
+  var maxRow = -1;
+  for (final cell in best) {
+    final cx = cell % cols;
+    final cy = cell ~/ cols;
+    if (cx < minCol) minCol = cx;
+    if (cx > maxCol) maxCol = cx;
+    if (cy < minRow) minRow = cy;
+    if (cy > maxRow) maxRow = cy;
+  }
+
+  final centroid = rotatePointToDisplaySpace(
+    x: rawCentroidX,
+    y: rawCentroidY,
     sensorOrientationDegrees: frame.sensorOrientationDegrees,
     mirror: frame.isFrontFacing,
   );
-  return FramePoint(normalizedX: display.x, normalizedY: display.y, luma: luma);
+  return FrameExtreme(
+    point: FramePoint(
+      normalizedX: centroid.x,
+      normalizedY: centroid.y,
+      luma: coreLuma.round().clamp(0, 255),
+    ),
+    meanLuma: bestMean,
+    bounds: _rotateRectToDisplaySpace(
+      left: toFrameX(minCol / cols),
+      top: toFrameY(minRow / rows),
+      right: toFrameX((maxCol + 1) / cols),
+      bottom: toFrameY((maxRow + 1) / rows),
+      frame: frame,
+    ),
+  );
+}
+
+void _visit(
+  int cell,
+  int label,
+  List<int> labels,
+  List<int> stack,
+  bool Function(int) inMask,
+) {
+  if (labels[cell] != -1 || !inMask(cell)) return;
+  labels[cell] = label;
+  stack.add(cell);
+}
+
+double _regionMean(List<int> cells, List<double> mean) {
+  var sum = 0.0;
+  for (final cell in cells) {
+    sum += mean[cell];
+  }
+  return sum / cells.length;
+}
+
+/// Rotates (and mirrors) an axis-aligned rect from raw sensor-normalized
+/// space into display space by transforming its corners - the rect stays
+/// axis-aligned because the rotation is always a multiple of 90 degrees.
+NormalizedRect _rotateRectToDisplaySpace({
+  required double left,
+  required double top,
+  required double right,
+  required double bottom,
+  required RawCameraFrame frame,
+}) {
+  var minX = 1.0;
+  var minY = 1.0;
+  var maxX = 0.0;
+  var maxY = 0.0;
+  for (final corner in [
+    [left, top],
+    [right, top],
+    [right, bottom],
+    [left, bottom],
+  ]) {
+    final p = rotatePointToDisplaySpace(
+      x: corner[0],
+      y: corner[1],
+      sensorOrientationDegrees: frame.sensorOrientationDegrees,
+      mirror: frame.isFrontFacing,
+    );
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return NormalizedRect(left: minX, top: minY, right: maxX, bottom: maxY);
 }
 
 List<int> _yuvToRgb(int y, int u, int v) {

@@ -46,18 +46,6 @@ class CameraSectorWidget extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               _buildPreview(constraints),
-              if (showExtremeLightSpots && brightestPoint != null)
-                _positionedMarker(
-                  point: brightestPoint!,
-                  color: Colors.black,
-                  constraints: constraints,
-                ),
-              if (showExtremeLightSpots && darkestPoint != null)
-                _positionedMarker(
-                  point: darkestPoint!,
-                  color: Colors.white,
-                  constraints: constraints,
-                ),
               // A transient notice (e.g. "torch is only available on the
               // rear lens") floats over the still-live preview and clears
               // itself after a few seconds (see CameraViewModel) - it
@@ -73,21 +61,33 @@ class CameraSectorWidget extends StatelessWidget {
     );
   }
 
-  Positioned _positionedMarker({
-    required FramePoint point,
-    required Color color,
-    required BoxConstraints constraints,
-  }) {
-    return Positioned(
-      left: point.normalizedX * constraints.maxWidth - 6,
-      top: point.normalizedY * constraints.maxHeight - 6,
+  /// A brightest/darkest marker, positioned by *fractional alignment*
+  /// inside whatever box the `CameraPreview` texture occupies. Placing it
+  /// in the preview's own coordinate space (rather than the outer sector
+  /// box) means it inherits `CameraPreview`'s rotation and the
+  /// `FittedBox(cover)` scale+crop for free, so it lands on the real
+  /// feature even near the frame edges where the cover-crop offset is
+  /// largest. `AnimatedPositioned` couldn't be used here (no `Stack`
+  /// ancestor with a fixed size); the analyzer + view-model smoother
+  /// already damp the motion, and `AnimatedAlign` glides the residual
+  /// ~2 Hz centroid steps.
+  Widget _fractionalMarker({required FramePoint point, required Color color}) {
+    return Positioned.fill(
       child: IgnorePointer(
-        child: Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: color, width: 2),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: Alignment(
+            (point.normalizedX * 2 - 1).clamp(-1.0, 1.0),
+            (point.normalizedY * 2 - 1).clamp(-1.0, 1.0),
+          ),
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: color, width: 2),
+            ),
           ),
         ),
       ),
@@ -166,7 +166,18 @@ class CameraSectorWidget extends StatelessWidget {
     // sector, cropping only the unavoidable overflow (the same
     // necessary edge-cropping any "fill the screen without letterbox
     // bars" preview does) - never distorting the aspect ratio itself.
-    final preview = ClipRect(
+    // The color-enhance filter wraps only the video texture, never the
+    // markers (a saturation/contrast filter would tint the black/white
+    // dots).
+    Widget video = CameraPreview(controller);
+    if (enhanceColors) {
+      video = ColorFiltered(
+        colorFilter: buildEnhanceColorPreviewFilter(),
+        child: video,
+      );
+    }
+
+    return ClipRect(
       child: FittedBox(
         fit: BoxFit.cover,
         child: ConstrainedBox(
@@ -174,14 +185,17 @@ class CameraSectorWidget extends StatelessWidget {
             maxWidth: constraints.maxWidth,
             maxHeight: constraints.maxHeight,
           ),
-          child: CameraPreview(controller),
+          child: Stack(
+            children: [
+              video,
+              if (showExtremeLightSpots && brightestPoint != null)
+                _fractionalMarker(point: brightestPoint!, color: Colors.black),
+              if (showExtremeLightSpots && darkestPoint != null)
+                _fractionalMarker(point: darkestPoint!, color: Colors.white),
+            ],
+          ),
         ),
       ),
-    );
-    if (!enhanceColors) return preview;
-    return ColorFiltered(
-      colorFilter: buildEnhanceColorPreviewFilter(),
-      child: preview,
     );
   }
 }

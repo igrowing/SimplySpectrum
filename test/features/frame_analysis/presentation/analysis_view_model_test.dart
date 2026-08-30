@@ -70,6 +70,41 @@ RawCameraFrame _uniformFrame({required int y, required int u, required int v}) {
   );
 }
 
+/// A 96x96 grey frame with one [value]-luma block at
+/// `[x0, y0] .. [x0 + size, y0 + size)`.
+RawCameraFrame _blockFrame({
+  required int x0,
+  required int y0,
+  int size = 24,
+  int value = 220,
+  int background = 110,
+}) {
+  const width = 96;
+  const height = 96;
+  final yPlane = Uint8List(width * height)
+    ..fillRange(0, width * height, background);
+  for (var y = y0; y < y0 + size; y++) {
+    for (var x = x0; x < x0 + size; x++) {
+      yPlane[y * width + x] = value;
+    }
+  }
+  const chromaWidth = width ~/ 2;
+  const chromaHeight = height ~/ 2;
+  final neutral = Uint8List(chromaWidth * chromaHeight)
+    ..fillRange(0, chromaWidth * chromaHeight, 128);
+
+  return RawCameraFrame(
+    width: width,
+    height: height,
+    format: RawFrameFormat.yuv420,
+    planes: [
+      RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
+      RawFramePlane(bytes: neutral, bytesPerRow: chromaWidth, pixelStride: 1),
+      RawFramePlane(bytes: neutral, bytesPerRow: chromaWidth, pixelStride: 1),
+    ],
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -170,6 +205,46 @@ void main() {
 
         expect(viewModel.brightestPoint, isNull);
         expect(viewModel.darkestPoint, isNull);
+      },
+    );
+
+    test(
+      'holds the brightest marker put until a challenger region is '
+      'confirmed over consecutive analyses',
+      () async {
+        final camera = _FakeCameraRepository();
+        final viewModel = AnalysisViewModel(
+          cameraRepository: camera,
+          analysisInterval: const Duration(milliseconds: 20),
+        );
+        addTearDown(viewModel.dispose);
+        viewModel.settings = const AppSettings(showExtremeLightSpots: true);
+
+        Future<void> analyze(RawCameraFrame frame) async {
+          camera.emit(frame);
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        }
+
+        // Lock onto a bright region in the top-left quadrant.
+        final topLeft = _blockFrame(x0: 8, y0: 8);
+        await analyze(topLeft);
+        await analyze(topLeft);
+        final locked = viewModel.brightestPoint!;
+        expect(locked.normalizedX, lessThan(0.5));
+        expect(locked.normalizedY, lessThan(0.5));
+
+        // A single frame with an equally-bright region in the opposite
+        // corner must NOT move the marker (unconfirmed challenger).
+        final bottomRight = _blockFrame(x0: 64, y0: 64);
+        await analyze(bottomRight);
+        expect(viewModel.brightestPoint!.normalizedX, lessThan(0.5));
+        expect(viewModel.brightestPoint!.normalizedY, lessThan(0.5));
+
+        // Once it persists for a second analysis the marker relocates.
+        await analyze(bottomRight);
+        await analyze(bottomRight);
+        expect(viewModel.brightestPoint!.normalizedX, greaterThan(0.5));
+        expect(viewModel.brightestPoint!.normalizedY, greaterThan(0.5));
       },
     );
   });

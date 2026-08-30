@@ -137,18 +137,23 @@ void main() {
       expect(average.g, closeTo(average.b, 5));
     });
 
-    test('locates brightest and darkest points when requested', () {
-      const width = 16;
-      const height = 16;
-      final yPlane = Uint8List(width * height);
-      // Bottom-right sampled cell is bright, top-left is dark; rest mid.
-      for (var i = 0; i < yPlane.length; i++) {
-        yPlane[i] = 100;
+    test('locates the brightest and darkest regions when requested', () {
+      const width = 96;
+      const height = 96;
+      // Mid-grey background with a bright block near the top-right and a
+      // dark block near the bottom-left.
+      final yPlane = Uint8List(width * height)
+        ..fillRange(0, width * height, 120);
+      void fillBlock(int x0, int y0, int x1, int y1, int value) {
+        for (var y = y0; y < y1; y++) {
+          for (var x = x0; x < x1; x++) {
+            yPlane[y * width + x] = value;
+          }
+        }
       }
-      // With sampleStep=4, samples land on (0,0), (4,0)...; force one
-      // sampled cell to be the brightest and one to be the darkest.
-      yPlane[0] = 5; // (x=0,y=0) darkest
-      yPlane[12 * width + 12] = 250; // (x=12,y=12) brightest
+
+      fillBlock(60, 12, 84, 36, 235); // bright, centered around (72, 24)
+      fillBlock(12, 60, 36, 84, 12); // dark, centered around (24, 72)
 
       const chromaWidth = width ~/ 2;
       const chromaHeight = height ~/ 2;
@@ -176,17 +181,137 @@ void main() {
 
       final result = analyzeFrame(
         frame,
-        sampleStep: 4,
         locateBrightestPoint: true,
         locateDarkestPoint: true,
       );
 
-      expect(result.brightestPoint, isNotNull);
-      expect(result.darkestPoint, isNotNull);
-      expect(result.brightestPoint!.normalizedX, closeTo(12 / width, 0.001));
-      expect(result.brightestPoint!.normalizedY, closeTo(12 / height, 0.001));
-      expect(result.darkestPoint!.normalizedX, 0);
-      expect(result.darkestPoint!.normalizedY, 0);
+      final brightest = result.brightestRegion;
+      final darkest = result.darkestRegion;
+      expect(brightest, isNotNull);
+      expect(darkest, isNotNull);
+
+      // Marker centroid lands on the block, not on background noise.
+      expect(brightest!.point.normalizedX, closeTo(72 / width, 0.08));
+      expect(brightest.point.normalizedY, closeTo(24 / height, 0.08));
+      expect(darkest!.point.normalizedX, closeTo(24 / width, 0.08));
+      expect(darkest.point.normalizedY, closeTo(72 / height, 0.08));
+
+      // Region mean luma reflects the block, not the mid-grey field.
+      expect(brightest.meanLuma, greaterThan(200));
+      expect(darkest.meanLuma, lessThan(40));
+
+      // Bounds enclose the centroid.
+      expect(
+        brightest.bounds.left,
+        lessThanOrEqualTo(brightest.point.normalizedX),
+      );
+      expect(
+        brightest.bounds.right,
+        greaterThanOrEqualTo(brightest.point.normalizedX),
+      );
+    });
+
+    test('a single hot cell does not outvote a real bright region', () {
+      const width = 96;
+      const height = 96;
+      final yPlane = Uint8List(width * height)
+        ..fillRange(0, width * height, 100);
+      // A genuine bright region...
+      for (var y = 20; y < 44; y++) {
+        for (var x = 20; x < 44; x++) {
+          yPlane[y * width + x] = 200;
+        }
+      }
+      // ...and one lone blown-out pixel in the far corner.
+      yPlane[(height - 1) * width + (width - 1)] = 255;
+
+      const chromaWidth = width ~/ 2;
+      const chromaHeight = height ~/ 2;
+      final neutral = Uint8List(chromaWidth * chromaHeight)
+        ..fillRange(0, chromaWidth * chromaHeight, 128);
+      final frame = RawCameraFrame(
+        width: width,
+        height: height,
+        format: RawFrameFormat.yuv420,
+        planes: [
+          RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
+          RawFramePlane(
+            bytes: neutral,
+            bytesPerRow: chromaWidth,
+            pixelStride: 1,
+          ),
+          RawFramePlane(
+            bytes: neutral,
+            bytesPerRow: chromaWidth,
+            pixelStride: 1,
+          ),
+        ],
+      );
+
+      final brightest = analyzeFrame(
+        frame,
+        locateBrightestPoint: true,
+      ).brightestRegion;
+
+      expect(brightest, isNotNull);
+      // Centroid is on the region near (32, 32), not the corner pixel.
+      expect(brightest!.point.normalizedX, closeTo(32 / width, 0.15));
+      expect(brightest.point.normalizedY, closeTo(32 / height, 0.15));
+    });
+
+    test('a near-black edge band is ignored by darkest-region detection', () {
+      const width = 120;
+      const height = 120;
+      // Mid-grey field, a 3px pure-black border (padding / optical-black
+      // artifact), and a genuinely dark - but not black - block in the
+      // interior.
+      final yPlane = Uint8List(width * height)
+        ..fillRange(0, width * height, 140);
+      for (var y = 0; y < height; y++) {
+        for (var x = 0; x < width; x++) {
+          final onBorder = x < 3 || x >= width - 3 || y < 3 || y >= height - 3;
+          if (onBorder) yPlane[y * width + x] = 0;
+        }
+      }
+      for (var y = 50; y < 74; y++) {
+        for (var x = 50; x < 74; x++) {
+          yPlane[y * width + x] = 45;
+        }
+      }
+
+      const chromaWidth = width ~/ 2;
+      const chromaHeight = height ~/ 2;
+      final neutral = Uint8List(chromaWidth * chromaHeight)
+        ..fillRange(0, chromaWidth * chromaHeight, 128);
+      final frame = RawCameraFrame(
+        width: width,
+        height: height,
+        format: RawFrameFormat.yuv420,
+        planes: [
+          RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
+          RawFramePlane(
+            bytes: neutral,
+            bytesPerRow: chromaWidth,
+            pixelStride: 1,
+          ),
+          RawFramePlane(
+            bytes: neutral,
+            bytesPerRow: chromaWidth,
+            pixelStride: 1,
+          ),
+        ],
+      );
+
+      final darkest = analyzeFrame(
+        frame,
+        locateDarkestPoint: true,
+      ).darkestRegion;
+
+      expect(darkest, isNotNull);
+      // Marker is on the interior block (~62, 62), not stuck on an edge.
+      expect(darkest!.point.normalizedX, closeTo(62 / width, 0.12));
+      expect(darkest.point.normalizedY, closeTo(62 / height, 0.12));
+      expect(darkest.meanLuma, closeTo(45, 10));
     });
 
     test('non-yuv420 frames return empty histograms rather than throwing', () {
