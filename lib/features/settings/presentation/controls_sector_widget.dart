@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:simply_spectrum/core/services/platform_service.dart';
 import 'package:simply_spectrum/core/widgets/translucent_icon_button.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/color_conversions.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/settings/presentation/settings_screen.dart';
-import 'package:simply_spectrum/core/services/platform_service.dart';
 
 /// The "thickness" of the average-color strip: its height when it spans
 /// the sector's full width (vertical layout), or its width when it spans
@@ -16,9 +16,9 @@ const double _averageColorStripThickness = 120;
 /// The Controls sector: the average-color readout (a full-bleed strip
 /// that reads as a continuation of the sector rather than a floating
 /// card) plus a 2x2 grid of camera controls (swap lens, torch, snapshot,
-/// freeze) and small "keep screen on"/"open settings" toggles. Detailed
-/// settings switches live on their own full [SettingsScreen] instead,
-/// keeping this sector uncluttered.
+/// freeze), a labelled "SCREEN ON" pill bottom-left, and the settings
+/// gear bottom-right. Detailed settings switches live on their own full
+/// [SettingsScreen] instead, keeping this sector uncluttered.
 class ControlsSectorWidget extends StatefulWidget {
   const ControlsSectorWidget({
     required this.viewModel,
@@ -57,9 +57,73 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
   );
 
   Future<void> _toggleKeepScreenOn() async {
+    final messenger = ScaffoldMessenger.of(context);
     final next = !_keepScreenOn;
     await PlatformService.setWakelock(next);
-    if (mounted) setState(() => _keepScreenOn = next);
+    if (!mounted) return;
+    setState(() => _keepScreenOn = next);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            next
+                ? 'Keeping the screen on'
+                : 'Screen will turn off by system timeout',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+  }
+
+  /// The "keep screen on" toggle: a labelled translucent pill (lightbulb
+  /// icon + word), deliberately placed at the opposite corner from the
+  /// Settings button so it doesn't read as more navigation chrome. A
+  /// filled bulb + brighter fill = on; an outline bulb = off. Long-press
+  /// (and screen readers) surface the fuller "Keep screen on" phrasing.
+  Widget _keepScreenOnControl() {
+    final active = _keepScreenOn;
+    final foreground = active ? Colors.black : Colors.white;
+    return Tooltip(
+      message: 'Keep screen on',
+      child: Semantics(
+        button: true,
+        toggled: active,
+        label: 'Keep screen on',
+        excludeSemantics: true,
+        child: Material(
+          color: (active ? Colors.white : Colors.black).withValues(alpha: 0.35),
+          shape: const StadiumBorder(),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: _toggleKeepScreenOn,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    active ? Icons.lightbulb : Icons.lightbulb_outline,
+                    color: foreground,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'SCREEN ON',
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -243,39 +307,31 @@ class _ControlsSectorWidgetState extends State<ControlsSectorWidget> {
               );
             },
           ),
+          // "Keep screen on" sits bottom-left, the full width of the
+          // sector away from the Settings button, so the two never read
+          // as a single cluster of navigation chrome.
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: _keepScreenOnControl(),
+          ),
           Positioned(
             right: 8,
             bottom: 8,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TranslucentIconButton(
-                  icon: _keepScreenOn
-                      ? Icons.brightness_high
-                      : Icons.brightness_low_outlined,
-                  semanticLabel: 'Keep screen on',
-                  isActive: _keepScreenOn,
-                  iconSize: 16,
-                  padding: const EdgeInsets.all(7),
-                  onPressed: _toggleKeepScreenOn,
-                ),
-                const SizedBox(width: 8),
-                TranslucentIconButton(
-                  icon: Icons.settings_outlined,
-                  semanticLabel: 'Settings',
-                  iconSize: 16,
-                  padding: const EdgeInsets.all(7),
-                  onPressed: () {
-                    unawaited(
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const SettingsScreen(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+            child: TranslucentIconButton(
+              icon: Icons.settings_outlined,
+              semanticLabel: 'Settings',
+              iconSize: 16,
+              padding: const EdgeInsets.all(7),
+              onPressed: () {
+                unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsScreen(),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],
