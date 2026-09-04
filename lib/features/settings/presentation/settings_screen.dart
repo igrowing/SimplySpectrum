@@ -79,9 +79,9 @@ class SettingsScreen extends StatelessWidget {
                   value: settings.themeMode,
                   onChanged: viewModel.setThemeMode,
                 ),
-                _MainScreenOrderSetting(
-                  settings: settings,
-                  onChanged: viewModel.setSectorWidget,
+                _ChartsPlacementSetting(
+                  value: settings.chartsAtTop,
+                  onChanged: viewModel.setChartsAtTop,
                 ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 32, 16, 0),
@@ -175,25 +175,18 @@ class _ThemeModeSetting extends StatelessWidget {
   }
 }
 
-/// The "Main screen order" setting: a 2x2 grid of dropdowns, laid out
-/// to visually mirror the actual sector grid on the main screen (see
-/// `HomePage`) - top-left/top-right on one row, bottom-left/bottom-right
-/// on the next - so it's obvious at a glance which dropdown controls
-/// which physical position.
-///
-/// Choosing a widget for a position swaps it with whatever previously
-/// occupied that position (see `AppSettings.withSectorWidget`), since
-/// all 4 pieces of functionality must always be assigned somewhere -
-/// there's no "off" option.
-class _MainScreenOrderSetting extends StatelessWidget {
-  const _MainScreenOrderSetting({
-    required this.settings,
+/// The "Charts placement" setting: a Top/Bottom segmented toggle that
+/// decides which half of the main screen the combined chart occupies
+/// (top/bottom in the vertical layout, left/right in the horizontal
+/// one); the camera + controls take the other half.
+class _ChartsPlacementSetting extends StatelessWidget {
+  const _ChartsPlacementSetting({
+    required this.value,
     required this.onChanged,
   });
 
-  final AppSettings settings;
-  final Future<void> Function(SectorPosition position, SectorWidgetType widget)
-  onChanged;
+  final bool value;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -207,91 +200,35 @@ class _MainScreenOrderSetting extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Main screen order',
+            'Charts placement',
             style: Theme.of(context).textTheme.bodyLarge,
           ),
           const SizedBox(height: 4),
           Text(
-            'Choose what each quadrant of the main screen shows. '
-            'Assigning one here swaps it with whatever it replaces.',
+            'Which half of the screen shows the charts. The camera and '
+            'controls take the other half (left/right instead of '
+            'top/bottom in landscape).',
             style: subtitleStyle,
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _SectorDropdown(
-                  position: SectorPosition.topLeft,
-                  value: settings.topLeftSector,
-                  onChanged: onChanged,
-                ),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: true,
+                label: Text('Top'),
+                icon: Icon(Icons.vertical_align_top),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _SectorDropdown(
-                  position: SectorPosition.topRight,
-                  value: settings.topRightSector,
-                  onChanged: onChanged,
-                ),
+              ButtonSegment(
+                value: false,
+                label: Text('Bottom'),
+                icon: Icon(Icons.vertical_align_bottom),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _SectorDropdown(
-                  position: SectorPosition.bottomLeft,
-                  value: settings.bottomLeftSector,
-                  onChanged: onChanged,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _SectorDropdown(
-                  position: SectorPosition.bottomRight,
-                  value: settings.bottomRightSector,
-                  onChanged: onChanged,
-                ),
-              ),
-            ],
+            selected: {value},
+            onSelectionChanged: (selection) => onChanged(selection.first),
           ),
         ],
       ),
-    );
-  }
-}
-
-/// A single quadrant's dropdown in the "Main screen order" grid.
-class _SectorDropdown extends StatelessWidget {
-  const _SectorDropdown({
-    required this.position,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final SectorPosition position;
-  final SectorWidgetType value;
-  final Future<void> Function(SectorPosition position, SectorWidgetType widget)
-  onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<SectorWidgetType>(
-      initialValue: value,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        border: OutlineInputBorder(),
-      ),
-      items: [
-        for (final type in SectorWidgetType.values)
-          DropdownMenuItem(value: type, child: Text(type.label)),
-      ],
-      onChanged: (selected) {
-        if (selected != null) unawaited(onChanged(position, selected));
-      },
     );
   }
 }

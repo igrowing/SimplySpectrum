@@ -58,31 +58,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(viewModel.settings.themeMode, AppThemeMode.dark);
 
-    // The "Main screen order" grid shows the default arrangement.
-    expect(find.text('Main screen order'), findsOneWidget);
-    expect(find.text('Camera'), findsOneWidget);
-    expect(find.text('Color chart'), findsOneWidget);
-    expect(find.text('Luminosity chart'), findsOneWidget);
-    expect(find.text('Controls'), findsOneWidget);
+    // The "Charts placement" segmented toggle defaults to Top, and
+    // switching it to Bottom updates the persisted setting.
+    expect(find.text('Charts placement'), findsOneWidget);
+    expect(viewModel.settings.chartsAtTop, isTrue);
 
-    // Assigning Controls to the top-left dropdown (currently Camera)
-    // swaps the two: Controls moves to top-left, and Camera - what
-    // used to be there - takes over wherever Controls was (bottom-right).
-    await tester.tap(find.text('Camera'));
+    await tester.tap(find.text('Bottom'));
     await tester.pumpAndSettle();
-    // The opened menu re-lists all 4 options; the last "Controls" match
-    // is the menu item (the other is the still-visible bottom-right
-    // dropdown showing its current selection).
-    await tester.tap(find.text('Controls').last);
-    await tester.pumpAndSettle();
-
-    expect(viewModel.settings.topLeftSector, SectorWidgetType.controls);
-    expect(viewModel.settings.bottomRightSector, SectorWidgetType.camera);
-    expect(viewModel.settings.topRightSector, SectorWidgetType.colorChart);
-    expect(
-      viewModel.settings.bottomLeftSector,
-      SectorWidgetType.luminosityChart,
-    );
+    expect(viewModel.settings.chartsAtTop, isFalse);
 
     // Scroll down to reach the footer at the bottom of the list, which
     // is now off the default viewport with the new section above it.

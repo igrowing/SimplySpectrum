@@ -69,12 +69,9 @@ class SettingsViewModel extends ChangeNotifier {
   Future<void> setThemeMode(AppThemeMode value) =>
       _update((s) => s.copyWith(themeMode: value));
 
-  /// Assigns [widget] to [position] in the main screen's sector grid,
-  /// swapping it with whatever was already there (see
-  /// `AppSettings.withSectorWidget`) - this is what each of the "Main
-  /// screen order" dropdowns calls on selection.
-  Future<void> setSectorWidget(
-    SectorPosition position,
-    SectorWidgetType widget,
-  ) => _update((s) => s.withSectorWidget(position, widget));
+  /// Whether the combined chart occupies the top/left half of the main
+  /// screen (true) or the bottom/right half (false) - this is what the
+  /// "Charts placement" setting calls on selection.
+  Future<void> setChartsAtTop(bool value) =>
+      _update((s) => s.copyWith(chartsAtTop: value));
 }
