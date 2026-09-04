@@ -7,6 +7,7 @@ import 'package:simply_spectrum/core/logging/app_logger.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_sector_widget.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
 import 'package:simply_spectrum/features/combined_chart/presentation/analysis_chart_widget.dart';
+import 'package:simply_spectrum/features/combined_chart/presentation/pinch_zoom_hint_overlay.dart';
 import 'package:simply_spectrum/features/frame_analysis/presentation/analysis_view_model.dart';
 import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/settings/presentation/controls_sector_widget.dart';
@@ -35,6 +36,12 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final GlobalKey _screenBoundaryKey = GlobalKey();
 
+  /// Whether the one-shot pinch-to-zoom hint (shown over the chart
+  /// half for the first two seconds after the app starts) is still
+  /// on screen. Cleared by the overlay itself once its animation
+  /// completes.
+  bool _showPinchHint = true;
+
   Future<void> _handleSnapshot(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -50,54 +57,69 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// The camera + controls half: the live preview on top (it needs the
-  /// bigger share of the space) and the Controls sector (average-color
-  /// strip + button grid + corner toggles) below it. Both layouts
-  /// (the bottom half in vertical, the right half in horizontal) stack
-  /// these two vertically, since both regions are taller than wide or
-  /// short-and-wide respectively - the controls widget adapts its own
-  /// internal arrangement to its box independently.
+  /// The camera + controls half, arranged per orientation to keep each
+  /// sector's pre-redesign shape: side by side in the vertical layout
+  /// (camera left, controls right - the half is short and wide, so the
+  /// sectors end up tall/narrow "vertical" ones) and stacked in the
+  /// horizontal layout (camera above controls - the half is tall, so
+  /// the sectors end up short/wide "horizontal" ones).
   Widget _buildCameraAndControls({
     required CameraViewModel camera,
     required AppSettings settings,
     required AnalysisViewModel analysis,
     required VoidCallback onSnapshot,
+    required bool isVertical,
   }) {
-    return Column(
-      children: [
-        Expanded(
-          flex: 3,
-          child: CameraSectorWidget(
-            viewModel: camera,
-            brightestPoint: analysis.brightestPoint,
-            darkestPoint: analysis.darkestPoint,
-            showExtremeLightSpots: settings.showExtremeLightSpots,
-            enhanceColors: settings.enhanceColors,
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: ControlsSectorWidget(
-            viewModel: camera,
-            onSnapshot: onSnapshot,
-            averageColor: analysis.averageColor,
-          ),
-        ),
-      ],
+    final cameraView = Expanded(
+      flex: 3,
+      child: CameraSectorWidget(
+        viewModel: camera,
+        brightestPoint: analysis.brightestPoint,
+        darkestPoint: analysis.darkestPoint,
+        showExtremeLightSpots: settings.showExtremeLightSpots,
+        enhanceColors: settings.enhanceColors,
+      ),
     );
+    final controls = Expanded(
+      flex: 2,
+      child: ControlsSectorWidget(
+        viewModel: camera,
+        onSnapshot: onSnapshot,
+        averageColor: analysis.averageColor,
+      ),
+    );
+
+    if (isVertical) {
+      return Row(children: [cameraView, controls]);
+    }
+    return Column(children: [cameraView, controls]);
   }
 
   Widget _buildCharts({
     required AppSettings settings,
     required AnalysisViewModel analysis,
   }) {
-    return AnalysisChartWidget(
+    final chart = AnalysisChartWidget(
       spectrum: analysis.spectrum,
       luminosity: analysis.luminosity,
       unit: settings.spectrumUnit,
       showPeaks: settings.detectColorPeaks,
       spectrumYAxisMax: analysis.spectrumAxisMax,
       luminosityYAxisMax: analysis.luminosityAxisMax,
+    );
+
+    // On app start, a two-second self-dismissing animation over the
+    // chart advertises the pinch-to-zoom ability.
+    if (!_showPinchHint) return chart;
+    return Stack(
+      children: [
+        Positioned.fill(child: chart),
+        Positioned.fill(
+          child: PinchZoomHintOverlay(
+            onFinished: () => setState(() => _showPinchHint = false),
+          ),
+        ),
+      ],
     );
   }
 
@@ -147,6 +169,7 @@ class _HomePageState extends State<HomePage> {
                     settings: settings,
                     analysis: analysis,
                     onSnapshot: () => _handleSnapshot(context),
+                    isVertical: isVertical,
                   );
 
                   // "Charts placement" setting: charts on top (or on

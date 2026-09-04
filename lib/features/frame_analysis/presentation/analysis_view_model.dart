@@ -76,7 +76,6 @@ class AnalysisViewModel extends ChangeNotifier {
   Timer? _axisRescaleTimer;
   bool _isBusy = false;
   DateTime? _lastAnalysisTime;
-  bool _hasScaledAxesOnce = false;
   AppSettings _settings = const AppSettings();
 
   SpectrumHistogram spectrum = SpectrumHistogram.empty();
@@ -147,26 +146,50 @@ class AnalysisViewModel extends ChangeNotifier {
         brightestPoint = _brightestSmoother.displayed;
         darkestPoint = _darkestSmoother.displayed;
       }
-      // Seed the Y-axis scale from the very first analyzed frame rather
-      // than leaving it at the placeholder value of 1 until the first
-      // `kAxisRescaleInterval` timer tick fires - otherwise both charts
-      // would show an absurdly tall, near-flat-lined polyline for up to
-      // 10 seconds after the app launches.
-      if (!_hasScaledAxesOnce) {
-        _hasScaledAxesOnce = true;
-        _rescaleAxes();
-      }
+      // Grow the Y axes immediately whenever the fresh data exceeds
+      // them (see [_growAxesIfNeeded]).
+      _growAxesIfNeeded();
       notifyListeners();
     } finally {
       _isBusy = false;
     }
   }
 
+  /// Grows each chart's Y-axis full-scale value (rounded to a nice
+  /// number) whenever the current data exceeds it. This runs on every
+  /// analyzed frame, so a sudden brightness jump - e.g. the scene
+  /// becoming well-illuminated after darkness, where real peaks can be
+  /// 100x the noise floor the axis was calibrated to - rescales the
+  /// axis within one analysis interval instead of riding the ceiling
+  /// with clipped, flat-topped peaks ("guitar-fuzz" chart) for up to
+  /// [kAxisRescaleInterval].
+  ///
+  /// Growing only (never shrinking here) keeps the axis labels stable:
+  /// the slow [_rescaleAxes] timer owns relaxing the scale back down
+  /// when the data magnitude falls.
+  void _growAxesIfNeeded() {
+    final spectrumMax = spectrum.bins.fold(0, (max, v) => v > max ? v : max);
+    final newSpectrumAxis = niceAxisMax(spectrumMax);
+    if (newSpectrumAxis > spectrumAxisMax) {
+      spectrumAxisMax = newSpectrumAxis;
+    }
+
+    final luminosityMax = luminosity.bins.fold(
+      0,
+      (max, v) => v > max ? v : max,
+    );
+    final newLuminosityAxis = niceAxisMax(luminosityMax);
+    if (newLuminosityAxis > luminosityAxisMax) {
+      luminosityAxisMax = newLuminosityAxis;
+    }
+  }
+
   /// Fired on [kAxisRescaleInterval]: recomputes each chart's Y-axis
   /// full-scale value from the current histogram, rounded to a legible
   /// "nice" number. Chart data itself keeps updating every
-  /// [kAnalysisInterval] via [_onFrame] - only the axis scale/labels are
-  /// held steady between rescales.
+  /// [kAnalysisInterval] via [_onFrame] - the axis relaxes downward
+  /// only on this timer, while growing happens immediately per frame
+  /// (see [_growAxesIfNeeded]).
   void _rescaleAxes() {
     final spectrumMax = spectrum.bins.fold(0, (max, v) => v > max ? v : max);
     final luminosityMax = luminosity.bins.fold(

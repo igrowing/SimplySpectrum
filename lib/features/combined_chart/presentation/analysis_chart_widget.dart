@@ -46,10 +46,14 @@ class AnalysisChartWidget extends StatefulWidget {
   static const double _maxScale = 12;
 
   @override
-  State<AnalysisChartWidget> createState() => _AnalysisChartWidgetState();
+  State<AnalysisChartWidget> createState() => AnalysisChartWidgetState();
 }
 
-class _AnalysisChartWidgetState extends State<AnalysisChartWidget> {
+class AnalysisChartWidgetState extends State<AnalysisChartWidget> {
+  /// The current zoom/pan window (public for widget tests; the pan
+  /// is top-based, matching [ChartViewport.top]).
+  ChartViewport get viewport => _viewport;
+
   double _scale = 1;
 
   /// Pan position, in fractions of the full (unzoomed) chart content,
@@ -174,45 +178,50 @@ class _AnalysisChartWidgetState extends State<AnalysisChartWidget> {
 
     return ColoredBox(
       color: colorScheme.surface,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return Stack(
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 92, 4),
-                    child: Row(
-                      children: [
-                        Text(
-                          _spectrumAverageLabel(),
-                          style: TextStyle(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Text(
-                          _luminosityAverageLabel(),
-                          style: TextStyle(
-                            color: luminosityLineColor,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 92, 4),
+                child: Row(
+                  children: [
+                    Text(
+                      _spectrumAverageLabel(),
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: ClipRect(
-                      child: GestureDetector(
+                    const SizedBox(width: 16),
+                    Text(
+                      _luminosityAverageLabel(),
+                      style: TextStyle(
+                        color: luminosityLineColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ClipRect(
+                  // The LayoutBuilder lives INSIDE the header-less chart
+                  // area so its constraints - and thus `_plotRect` - match
+                  // the GestureDetector's own local coordinates (its
+                  // origin sits below the header), keeping the pinch/pan
+                  // mapping exact.
+                  child: LayoutBuilder(
+                    builder: (context, chartConstraints) {
+                      return GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onScaleStart: (details) =>
-                            _onScaleStart(details, constraints),
+                            _onScaleStart(details, chartConstraints),
                         onScaleUpdate: (details) =>
-                            _onScaleUpdate(details, constraints),
+                            _onScaleUpdate(details, chartConstraints),
                         onDoubleTap: _resetZoom,
                         child: CustomPaint(
                           painter: CombinedChartPainter(
@@ -233,50 +242,50 @@ class _AnalysisChartWidgetState extends State<AnalysisChartWidget> {
                           ),
                           size: Size.infinite,
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
-                ],
-              ),
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TranslucentIconButton(
-                      icon: Icons.info_outline,
-                      semanticLabel: 'Spectrum info',
-                      onPressed: () {
-                        unawaited(
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const SpectrumInfoScreen(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    TranslucentIconButton(
-                      icon: Icons.info_outline,
-                      semanticLabel: 'Luminosity info',
-                      onPressed: () {
-                        unawaited(
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const LuminosityInfoScreen(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
                 ),
               ),
             ],
-          );
-        },
+          ),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TranslucentIconButton(
+                  icon: Icons.info_outline,
+                  semanticLabel: 'Spectrum info',
+                  onPressed: () {
+                    unawaited(
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const SpectrumInfoScreen(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                TranslucentIconButton(
+                  icon: Icons.info_outline,
+                  semanticLabel: 'Luminosity info',
+                  onPressed: () {
+                    unawaited(
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const LuminosityInfoScreen(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

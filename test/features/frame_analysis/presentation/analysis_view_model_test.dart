@@ -47,12 +47,17 @@ class _FakeCameraRepository implements CameraRepository {
   }
 }
 
-RawCameraFrame _uniformFrame({required int y, required int u, required int v}) {
-  const width = 16;
-  const height = 16;
+RawCameraFrame _uniformFrame({
+  required int y,
+  required int u,
+  required int v,
+  int dimension = 16,
+}) {
+  final width = dimension;
+  final height = dimension;
   final yPlane = Uint8List(width * height)..fillRange(0, width * height, y);
-  const chromaWidth = width ~/ 2;
-  const chromaHeight = height ~/ 2;
+  final chromaWidth = width ~/ 2;
+  final chromaHeight = height ~/ 2;
   final uPlane = Uint8List(chromaWidth * chromaHeight)
     ..fillRange(0, chromaWidth * chromaHeight, u);
   final vPlane = Uint8List(chromaWidth * chromaHeight)
@@ -144,9 +149,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
 
       // Only the first frame in the window should have been analyzed:
-      // one notify for the data itself, plus one for the first-frame
-      // axis seeding (see AnalysisViewModel._onFrame) - not 5.
-      expect(notifyCount, 2);
+      // one notify per analyzed frame, carrying both the data and any
+      // same-frame axis growth (see AnalysisViewModel._onFrame) - not 5.
+      expect(notifyCount, 1);
     });
 
     test(
@@ -184,6 +189,42 @@ void main() {
         // again from the latest data.
         await Future<void>.delayed(const Duration(milliseconds: 300));
         expect(viewModel.luminosityAxisMax, greaterThanOrEqualTo(1));
+      },
+    );
+
+    test(
+      'grows the Y axis immediately when a frame exceeds it, and never '
+      'shrinks it per frame (dark-to-bright regression)',
+      () async {
+        final camera = _FakeCameraRepository();
+        final viewModel = AnalysisViewModel(
+          cameraRepository: camera,
+          analysisInterval: const Duration(milliseconds: 20),
+          axisRescaleInterval: const Duration(seconds: 30),
+        );
+        addTearDown(viewModel.dispose);
+
+        // "Dark" start: a tiny frame with very few samples seeds a
+        // small axis.
+        camera.emit(_uniformFrame(y: 200, u: 128, v: 128, dimension: 16));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        final smallAxis = viewModel.luminosityAxisMax;
+        expect(smallAxis, greaterThan(1));
+
+        // The scene becomes illuminated: the next frame has ~9x the
+        // samples, so its tallest bin far exceeds the seeded axis. The
+        // axis must grow within one analysis interval - not wait for
+        // the (30s here) rescale timer - or the chart rides the
+        // ceiling with clipped, flat-topped peaks.
+        camera.emit(_uniformFrame(y: 200, u: 128, v: 128, dimension: 96));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(viewModel.luminosityAxisMax, greaterThan(smallAxis));
+
+        // Back to the small frame: the axis must NOT shrink per frame
+        // (label stability) - only the rescale timer may relax it.
+        camera.emit(_uniformFrame(y: 200, u: 128, v: 128, dimension: 16));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(viewModel.luminosityAxisMax, greaterThan(smallAxis));
       },
     );
 

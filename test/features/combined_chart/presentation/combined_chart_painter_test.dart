@@ -123,6 +123,42 @@ void main() {
       );
     });
 
+    test(
+      'screenYForBottomBasedFraction maps vertical pan like a picture '
+      'viewer (regression: inverted pan direction)',
+      () {
+        const plotRect = Rect.fromLTWH(0, 0, 100, 100);
+
+        // Unzoomed: content bottom (0) at the plot's bottom, content
+        // top (1) at the plot's top.
+        final full = painter();
+        expect(full.screenYForBottomBasedFraction(0, plotRect), 100);
+        expect(full.screenYForBottomBasedFraction(1, plotRect), 0);
+
+        // Zoomed 2x and panned down so the top edge of the plot shows
+        // the content's top (top-based viewport.top = 0): the visible
+        // bottom-based band is [0.5, 1] - the chart's upper half.
+        final pannedDown = painter(
+          viewport: const ChartViewport(top: 0, width: 0.5, height: 0.5),
+        );
+        expect(pannedDown.contentBottomFraction, closeTo(0.5, 1e-9));
+        expect(
+          pannedDown.screenYForBottomBasedFraction(0.5, plotRect),
+          100,
+        ); // band bottom at plot bottom
+        expect(pannedDown.screenYForBottomBasedFraction(1, plotRect), 0);
+
+        // Panned up instead (top-based viewport.top = 0.5, still 2x):
+        // the visible band is [0, 0.5] - the chart's lower half.
+        final pannedUp = painter(
+          viewport: const ChartViewport(top: 0.5, width: 0.5, height: 0.5),
+        );
+        expect(pannedUp.contentBottomFraction, 0);
+        expect(pannedUp.screenYForBottomBasedFraction(0, plotRect), 100);
+        expect(pannedUp.screenYForBottomBasedFraction(0.5, plotRect), 0);
+      },
+    );
+
     test('shouldRepaint reacts to viewport changes', () {
       final a = painter();
       final b = painter(

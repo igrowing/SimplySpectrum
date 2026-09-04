@@ -68,11 +68,11 @@ typedef ChartTick = ({double fraction, String label});
 ///   color information, so no separate rainbow reference bar is drawn.
 /// - The luminosity line is painted in a theme-contrasting color
 ///   (passed in by the widget as [luminosityLineColor]).
-/// - Dual Y axes: the left axis is the spectrum occurrence-count scale
-///   (normalized against [spectrumYAxisMax]); the right axis is the
-///   luminosity occurrence-count scale (normalized against
-///   [luminosityYAxisMax]). The two lines therefore share the plot
-///   geometry but each reads against its own axis.
+/// - Single Y axis: the left axis is the spectrum occurrence-count
+///   scale (normalized against [spectrumYAxisMax]). Both axes would
+///   read "pixels", which is redundant, so the luminosity line keeps
+///   its own [luminosityYAxisMax] normalization for its shape but no
+///   longer draws a right-side axis.
 /// - The X axis is shared positionally: the spectrum spans it as
 ///   400-700nm (left to right, remapped linearly in Hz in frequency
 ///   mode), the luminosity spans it as luma 0-255. Tick labels for both
@@ -106,7 +106,9 @@ class CombinedChartPainter extends CustomPainter {
   final int spectrumYAxisMax;
 
   /// Occurrence count mapping to the top of the plot for the
-  /// luminosity line (right Y axis).
+  /// luminosity line's normalization. No right axis is drawn for it -
+  /// the left (spectrum) axis already reads "pixels", so a second
+  /// pixel axis would be redundant; this only shapes the line.
   final int luminosityYAxisMax;
 
   /// Theme-derived chrome colors, so the grid and axis/tick labels
@@ -124,10 +126,29 @@ class CombinedChartPainter extends CustomPainter {
   /// [ChartViewport]).
   final ChartViewport viewport;
 
+  /// The bottom-based content fraction (0 = content bottom, 1 = content
+  /// top) visible at the plot's bottom edge.
+  ///
+  /// [ChartViewport.top] is top-based (measured down from the content's
+  /// top edge, matching how the gesture handler tracks the finger),
+  /// while all data-line fractions here are bottom-based (0 = bottom of
+  /// the chart, matching occurrence counts rising upward). This getter
+  /// converts the viewport into the data fraction space: the visible
+  /// bottom-based range is `[contentBottomFraction,
+  /// contentBottomFraction + viewport.height]`.
+  double get contentBottomFraction => 1 - viewport.top - viewport.height;
+
+  /// Screen-space y for a bottom-based content [fraction] (0 = content
+  /// bottom, 1 = content top) inside [plotRect], honoring the current
+  /// [viewport]. Public so the pan-direction behavior is unit-testable.
+  double screenYForBottomBasedFraction(double fraction, Rect plotRect) =>
+      plotRect.bottom -
+      (fraction - contentBottomFraction) / viewport.height * plotRect.height;
+
   // Margins, shared with `AnalysisChartWidget` (which uses them to map
   // gesture focal points into plot fractions).
   static const double leftAxisLabelWidth = 34;
-  static const double rightAxisLabelWidth = 34;
+  static const double rightAxisLabelWidth = 0;
   static const double bottomTicksHeight = 28;
   static const double spectrumLineWidth = 2;
   static const double luminosityLineWidth = 1.5;
@@ -152,8 +173,7 @@ class CombinedChartPainter extends CustomPainter {
         plotRect.left +
         (fraction - viewport.left) / viewport.width * plotRect.width;
     double sy(double fraction) =>
-        plotRect.bottom -
-        (fraction - viewport.top) / viewport.height * plotRect.height;
+        screenYForBottomBasedFraction(fraction, plotRect);
 
     _drawGridAndAxes(canvas, plotRect, sx, sy);
     _drawLuminosityLine(canvas, plotRect, sx, sy);
@@ -225,14 +245,9 @@ class CombinedChartPainter extends CustomPainter {
     // Horizontal grid lines + Y tick labels for both Y axes, from the
     // visible value window of each scale.
     final spectrumYTicks = _valueTicks(
-      viewport.top * spectrumYAxisMax,
-      (viewport.top + viewport.height) * spectrumYAxisMax,
+      contentBottomFraction * spectrumYAxisMax,
+      (contentBottomFraction + viewport.height) * spectrumYAxisMax,
     );
-    final luminosityYTicks = _valueTicks(
-      viewport.top * luminosityYAxisMax,
-      (viewport.top + viewport.height) * luminosityYAxisMax,
-    );
-
     for (final tick in spectrumYTicks) {
       final fraction = tick.value / spectrumYAxisMax;
       final y = sy(fraction);
@@ -254,19 +269,6 @@ class CombinedChartPainter extends CustomPainter {
         ),
       ),
       isYAxis: true,
-    );
-
-    _paintTickLabels(
-      canvas,
-      plotRect,
-      luminosityYTicks.map(
-        (t) => (
-          fraction: t.value / luminosityYAxisMax,
-          label: '${t.value.round()}',
-        ),
-      ),
-      isYAxis: true,
-      alignRight: true,
     );
 
     // Bottom rows: spectrum domain ticks, then luma ticks.
@@ -294,7 +296,6 @@ class CombinedChartPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
     painter.paint(canvas, Offset(4, plotRect.top - 2));
-    painter.paint(canvas, Offset(plotRect.right + 8, plotRect.top - 2));
   }
 
   /// Generates ticks for the spectrum X domain (nm or Hz depending on
@@ -378,7 +379,6 @@ class CombinedChartPainter extends CustomPainter {
     Rect plotRect,
     Iterable<ChartTick> ticks, {
     required bool isYAxis,
-    bool alignRight = false,
     int row = 0,
     Color? color,
   }) {
@@ -395,21 +395,13 @@ class CombinedChartPainter extends CustomPainter {
       if (isYAxis) {
         final y = _screenYForFraction(plotRect, tick.fraction);
         if (y < plotRect.top - 1 || y > plotRect.bottom + 1) continue;
-        offset = alignRight
-            ? Offset(
-                plotRect.right + 6,
-                (y - painter.height / 2).clamp(
-                  plotRect.top,
-                  plotRect.bottom - painter.height,
-                ),
-              )
-            : Offset(
-                plotRect.left - painter.width - 6,
-                (y - painter.height / 2).clamp(
-                  plotRect.top,
-                  plotRect.bottom - painter.height,
-                ),
-              );
+        offset = Offset(
+          plotRect.left - painter.width - 6,
+          (y - painter.height / 2).clamp(
+            plotRect.top,
+            plotRect.bottom - painter.height,
+          ),
+        );
       } else {
         final x = _screenXForFraction(plotRect, tick.fraction);
         if (x < plotRect.left || x > plotRect.right) continue;
@@ -431,8 +423,7 @@ class CombinedChartPainter extends CustomPainter {
       (fraction - viewport.left) / viewport.width * plotRect.width;
 
   double _screenYForFraction(Rect plotRect, double fraction) =>
-      plotRect.bottom -
-      (fraction - viewport.top) / viewport.height * plotRect.height;
+      screenYForBottomBasedFraction(fraction, plotRect);
 
   // --- Data lines ----------------------------------------------------------
 
