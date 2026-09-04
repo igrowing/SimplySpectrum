@@ -1,39 +1,42 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-/// A short, self-dismissing "ability of pinch to zoom" hint shown over
-/// the chart half of the screen when the app starts.
+/// A minimal, self-dismissing "Pinch to zoom" hint drawn over the
+/// chart half of the screen when the app starts.
 ///
-/// Plays a two-second animation - two fingertip dots pinching apart
-/// over a mini chart line, with a text hint - then fades out and
-/// reports [onFinished] so the host can drop it from the tree. The
-/// overlay is wrapped in [IgnorePointer], so it never blocks the
-/// gestures it advertises.
+/// The chart itself stays fully visible - no dimming, no card. For two
+/// seconds, two greyish fingertip circles diverge and converge (twice),
+/// with a "Pinch to zoom" caption; then the hint fades out and reports
+/// [onFinished] so the host can drop it from the tree. The overlay is
+/// wrapped in [IgnorePointer], so it never blocks the gestures it
+/// advertises.
 class PinchZoomHintOverlay extends StatefulWidget {
   const PinchZoomHintOverlay({required this.onFinished, super.key});
 
-  /// Called once the hold + fade animation completes; the host should
-  /// remove the overlay from the tree.
+  /// Called once the animation completes; the host should remove the
+  /// overlay from the tree.
   final VoidCallback onFinished;
 
   /// Total time the hint stays on screen.
   static const Duration displayDuration = Duration(seconds: 2);
+
+  /// How many diverge/converge cycles the circles run through.
+  static const int cycles = 2;
 
   @override
   State<PinchZoomHintOverlay> createState() => _PinchZoomHintOverlayState();
 }
 
 class _PinchZoomHintOverlayState extends State<PinchZoomHintOverlay>
-    with TickerProviderStateMixin {
-  late final AnimationController _master;
-  late final AnimationController _pinch;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
   bool _finished = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Master timeline: hold the hint, then fade it out at the end.
-    _master =
+    _controller =
         AnimationController(
           vsync: this,
           duration: PinchZoomHintOverlay.displayDuration,
@@ -43,21 +46,12 @@ class _PinchZoomHintOverlayState extends State<PinchZoomHintOverlay>
             widget.onFinished();
           }
         });
-
-    // Fingers pinch apart and back together, looping for the duration
-    // of the hint so the gesture is unmistakable.
-    _pinch = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
-
-    _master.forward();
+    _controller.forward();
   }
 
   @override
   void dispose() {
-    _master.dispose();
-    _pinch.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -67,43 +61,56 @@ class _PinchZoomHintOverlayState extends State<PinchZoomHintOverlay>
 
     return IgnorePointer(
       child: AnimatedBuilder(
-        animation: _master,
+        animation: _controller,
         builder: (context, _) {
-          // Opaque for the first 60% of the timeline, then ease out.
-          final opacity =
-              1 -
-              const Interval(0.6, 1).transform(_master.value).clamp(0.0, 1.0);
+          final t = _controller.value;
 
-          return ColoredBox(
-            color: colorScheme.surface.withValues(alpha: 0.55 * opacity),
-            child: Center(
-              child: Opacity(
-                opacity: opacity,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildPinchDemo(colorScheme),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Pinch to zoom · Double-tap to reset',
-                        style: TextStyle(
-                          color: colorScheme.onSurface,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+          // Fade out over the last 15% of the timeline.
+          final opacity =
+              1 - const Interval(0.85, 1).transform(t).clamp(0.0, 1.0);
+
+          // Separation phase: two full diverge/converge cycles across
+          // the whole timeline. sin(pi * phase) eases 0 -> 1 -> 0 once
+          // per cycle, so the circles glide out and back instead of
+          // snapping.
+          final phase = (t * PinchZoomHintOverlay.cycles) % 1;
+          final closeness = math.sin(math.pi * phase);
+          // 14px apart (almost touching) out to 90px apart.
+          final separation = 14.0 + 76.0 * closeness;
+
+          return Center(
+            child: Opacity(
+              opacity: opacity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 140,
+                    height: 48,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned(
+                          left: 70 - separation / 2 - 12,
+                          child: _fingerDot(),
                         ),
-                      ),
-                    ],
+                        Positioned(
+                          right: 70 - separation / 2 - 12,
+                          child: _fingerDot(),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Pinch to zoom',
+                    style: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.9),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -112,99 +119,21 @@ class _PinchZoomHintOverlayState extends State<PinchZoomHintOverlay>
     );
   }
 
-  /// The animated pinch demo: a mini chart snippet with two fingertip
-  /// dots that move apart (zoom in) and back together.
-  Widget _buildPinchDemo(ColorScheme colorScheme) {
-    return AnimatedBuilder(
-      animation: _pinch,
-      builder: (context, _) {
-        // Separation: 12px apart at t=0, 44px at t=1.
-        final separation = 12.0 + 32.0 * _pinch.value;
-
-        return SizedBox(
-          width: 96,
-          height: 44,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // A mini spectrum-ish line under the fingers, hinting at
-              // what is being zoomed.
-              CustomPaint(
-                size: const Size(96, 44),
-                painter: _MiniChartPainter(
-                  color: colorScheme.primary.withValues(alpha: 0.8),
-                ),
-              ),
-              Positioned(
-                left: 48 - separation / 2 - 8,
-                child: _fingerDot(colorScheme),
-              ),
-              Positioned(
-                right: 48 - separation / 2 - 8,
-                child: _fingerDot(colorScheme),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _fingerDot(ColorScheme colorScheme) => Container(
-    width: 16,
-    height: 16,
+  /// One greyish fingertip circle. A white rim keeps it readable over
+  /// both the light and the dark chart theme.
+  Widget _fingerDot() => Container(
+    width: 24,
+    height: 24,
     decoration: BoxDecoration(
-      color: colorScheme.primary,
+      color: const Color(0xFF9E9E9E).withValues(alpha: 0.85),
       shape: BoxShape.circle,
-      border: Border.all(color: colorScheme.surface, width: 2),
+      border: Border.all(color: Colors.white, width: 2),
       boxShadow: [
         BoxShadow(
-          color: colorScheme.onSurface.withValues(alpha: 0.3),
+          color: Colors.black.withValues(alpha: 0.35),
           blurRadius: 4,
         ),
       ],
     ),
   );
-}
-
-/// One smooth mini polyline with a peak, drawn in [color] - a tiny
-/// stand-in for the spectrum chart the overlay advertises.
-class _MiniChartPainter extends CustomPainter {
-  _MiniChartPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()..moveTo(0, size.height * 0.8);
-    path.quadraticBezierTo(
-      size.width * 0.3,
-      size.height * 0.75,
-      size.width * 0.45,
-      size.height * 0.25,
-    );
-    path.quadraticBezierTo(
-      size.width * 0.6,
-      size.height * 0.85,
-      size.width * 0.8,
-      size.height * 0.5,
-    );
-    path.quadraticBezierTo(
-      size.width * 0.9,
-      size.height * 0.45,
-      size.width,
-      size.height * 0.55,
-    );
-
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_MiniChartPainter oldDelegate) =>
-      color != oldDelegate.color;
 }

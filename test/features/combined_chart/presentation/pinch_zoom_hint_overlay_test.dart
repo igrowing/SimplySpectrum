@@ -17,7 +17,7 @@ void main() {
 
     // The overlay is on screen with the pinch hint.
     expect(find.byType(PinchZoomHintOverlay), findsOneWidget);
-    expect(find.text('Pinch to zoom · Double-tap to reset'), findsOneWidget);
+    expect(find.text('Pinch to zoom'), findsOneWidget);
 
     // Not finished yet mid-animation.
     await tester.pump(const Duration(seconds: 1));

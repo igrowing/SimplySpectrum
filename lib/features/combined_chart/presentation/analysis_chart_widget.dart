@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:simply_spectrum/core/widgets/translucent_icon_button.dart';
+import 'package:simply_spectrum/features/combined_chart/presentation/combined_chart_info_screen.dart';
 import 'package:simply_spectrum/features/combined_chart/presentation/combined_chart_painter.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
-import 'package:simply_spectrum/features/luminosity_analysis/presentation/luminosity_info_screen.dart';
+
 import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/spectrum_analysis/domain/spectrum_histogram.dart';
-import 'package:simply_spectrum/features/spectrum_analysis/presentation/spectrum_info_screen.dart';
 
 /// The combined live analysis chart: the spectrum (wavelength
 /// occurrence) and luminosity (luma occurrence) histograms overlaid on
@@ -22,8 +22,8 @@ import 'package:simply_spectrum/features/spectrum_analysis/presentation/spectrum
 /// the visible window, so zooming in reveals finer round-number ticks.
 ///
 /// A small header shows both averages (wavelength in nm or THz,
-/// luminosity in approx. lux), with one info button per domain
-/// floating at the top-right corner.
+/// luminosity in approx. lux), with a single info button at the
+/// top-right corner opening one merged explanation of both lines.
 class AnalysisChartWidget extends StatefulWidget {
   const AnalysisChartWidget({
     required this.spectrum,
@@ -252,37 +252,18 @@ class AnalysisChartWidgetState extends State<AnalysisChartWidget> {
           Positioned(
             top: 6,
             right: 6,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TranslucentIconButton(
-                  icon: Icons.info_outline,
-                  semanticLabel: 'Spectrum info',
-                  onPressed: () {
-                    unawaited(
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const SpectrumInfoScreen(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-                TranslucentIconButton(
-                  icon: Icons.info_outline,
-                  semanticLabel: 'Luminosity info',
-                  onPressed: () {
-                    unawaited(
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const LuminosityInfoScreen(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+            child: TranslucentIconButton(
+              icon: Icons.info_outline,
+              semanticLabel: 'Chart info',
+              onPressed: () {
+                unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CombinedChartInfoScreen(),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],

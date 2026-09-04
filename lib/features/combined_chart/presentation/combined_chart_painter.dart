@@ -76,7 +76,9 @@ typedef ChartTick = ({double fraction, String label});
 /// - The X axis is shared positionally: the spectrum spans it as
 ///   400-700nm (left to right, remapped linearly in Hz in frequency
 ///   mode), the luminosity spans it as luma 0-255. Tick labels for both
-///   domains are drawn under the plot (nm/Hz row, luma row).
+///   domains are drawn under the plot (nm/Hz row, luma row), and a
+///   black-to-white gradient bar at the very bottom marks the
+///   luminosity scale itself.
 /// - [viewport] carries the pinch-zoom/pan state (picture-viewer
 ///   style): all data lines, grid lines and tick labels are generated
 ///   for the visible window only, so zooming in reveals finer detail
@@ -149,7 +151,13 @@ class CombinedChartPainter extends CustomPainter {
   // gesture focal points into plot fractions).
   static const double leftAxisLabelWidth = 34;
   static const double rightAxisLabelWidth = 0;
-  static const double bottomTicksHeight = 28;
+  static const double bottomTicksHeight = 40;
+
+  /// Height of the black-to-white gradient bar at the very bottom of
+  /// the chart. The spectrum line's color coding is intuitive on its
+  /// own, but the luminosity line's X axis (luma 0 = black, 255 =
+  /// white) needs this scale to be readable at a glance.
+  static const double lumaBarHeight = 10;
   static const double spectrumLineWidth = 2;
   static const double luminosityLineWidth = 1.5;
 
@@ -283,7 +291,26 @@ class CombinedChartPainter extends CustomPainter {
       color: luminosityLineColor,
     );
 
-    // "px" unit hint beside each Y axis.
+    // Black-to-white luminosity scale bar at the very bottom: the X
+    // axis of the luminosity line (luma 0 = black on the left through
+    // 255 = white on the right), spanning the plot's width.
+    // The canvas bottom is plotRect.bottom + bottomTicksHeight, so
+    // the bar's top sits that bar-height above the canvas bottom.
+    final lumaBarRect = Rect.fromLTWH(
+      plotRect.left,
+      plotRect.bottom + bottomTicksHeight - lumaBarHeight,
+      plotRect.width,
+      lumaBarHeight,
+    );
+    final lumaBarPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [Colors.black, Colors.white],
+      ).createShader(lumaBarRect);
+    canvas.drawRect(lumaBarRect, lumaBarPaint);
+
+    // "px" unit hint beside the left Y axis.
     _paintUnitHints(canvas, plotRect);
   }
 
