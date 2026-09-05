@@ -41,6 +41,7 @@ Agents must use modern Flutter API patterns. Do not copy legacy (2022 or older) 
 ## 3. Strict Error Handling & Failure Protocols
 * **No Silent Swallowing:** Never wrap blocks in blank `catch (e) {}` statements. Errors must be captured, transformed into typed domain `Failure` objects, and explicitly pushed to the presentation layer or logged.
 * **Explicit Failure Over Default Data:** When parsing JSON data, configuration files, or network responses, **never fall back to implicit placeholder or default values** (e.g., an empty string `""` or a current timestamp `DateTime.now()`) if validation fails. Return an explicit `null` or throw a parsing exception. It is always better for the application to fail loudly and traceably than to operate silently with corrupted or hallucinated baseline data.
+* **Unit test per bug:** On every reported bug, create at least one (or more, as needed) unit test first to confirm the bug (expect the unit test to fail). On the bug fix finish, verify and confirm with the newly written unit test that the bug is fixed.
 
 ---
 
