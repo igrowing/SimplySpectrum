@@ -10,10 +10,17 @@ const _kSpectrumUnitKey = 'settings.spectrum_unit_is_frequency';
 const _kShowExtremeLightSpotsKey = 'settings.show_extreme_light_spots';
 const _kEnhanceColorsKey = 'settings.enhance_colors';
 const _kThemeModeKey = 'settings.theme_mode';
-const _kTopLeftSectorKey = 'settings.sector_top_left';
-const _kTopRightSectorKey = 'settings.sector_top_right';
-const _kBottomLeftSectorKey = 'settings.sector_bottom_left';
-const _kBottomRightSectorKey = 'settings.sector_bottom_right';
+const _kChartsAtTopKey = 'settings.charts_at_top';
+
+/// Legacy keys from the retired 2x2 sector-permutation layout (replaced
+/// by the single "charts placement" toggle). Removed on save so stale
+/// layout data never lingers in prefs.
+const _kLegacySectorKeys = [
+  'settings.sector_top_left',
+  'settings.sector_top_right',
+  'settings.sector_bottom_left',
+  'settings.sector_bottom_right',
+];
 
 /// Legacy keys from before "show brightest/darkest point" were merged
 /// into a single "show extreme light spots" switch. Migrated on load so
@@ -30,18 +37,6 @@ AppThemeMode _themeModeFromName(String? name) {
   return AppThemeMode.values.firstWhere(
     (mode) => mode.name == name,
     orElse: () => const AppSettings().themeMode,
-  );
-}
-
-/// Parses a persisted [SectorWidgetType] name back into the enum,
-/// falling back to [fallback] for a missing/unrecognized value.
-SectorWidgetType _sectorWidgetFromName(
-  String? name,
-  SectorWidgetType fallback,
-) {
-  return SectorWidgetType.values.firstWhere(
-    (type) => type.name == name,
-    orElse: () => fallback,
   );
 }
 
@@ -74,36 +69,9 @@ class SettingsRepositoryImpl implements SettingsRepository {
         enhanceColors:
             prefs.getBool(_kEnhanceColorsKey) ?? defaults.enhanceColors,
         themeMode: _themeModeFromName(prefs.getString(_kThemeModeKey)),
-        topLeftSector: _sectorWidgetFromName(
-          prefs.getString(_kTopLeftSectorKey),
-          defaults.topLeftSector,
-        ),
-        topRightSector: _sectorWidgetFromName(
-          prefs.getString(_kTopRightSectorKey),
-          defaults.topRightSector,
-        ),
-        bottomLeftSector: _sectorWidgetFromName(
-          prefs.getString(_kBottomLeftSectorKey),
-          defaults.bottomLeftSector,
-        ),
-        bottomRightSector: _sectorWidgetFromName(
-          prefs.getString(_kBottomRightSectorKey),
-          defaults.bottomRightSector,
-        ),
+        chartsAtTop: prefs.getBool(_kChartsAtTopKey) ?? defaults.chartsAtTop,
       );
-      // Guard against a corrupt/partially-migrated sector layout (e.g. a
-      // future app version's arrangement rolled back to this one, or
-      // prefs edited/restored out of band) producing a duplicated or
-      // missing sector widget - fall back to the default arrangement
-      // entirely rather than render a broken grid.
-      return loaded.hasValidSectorLayout
-          ? loaded
-          : loaded.copyWith(
-              topLeftSector: defaults.topLeftSector,
-              topRightSector: defaults.topRightSector,
-              bottomLeftSector: defaults.bottomLeftSector,
-              bottomRightSector: defaults.bottomRightSector,
-            );
+      return loaded;
     } catch (error, stackTrace) {
       _logger.error(
         'Failed to load persisted settings',
@@ -129,24 +97,15 @@ class SettingsRepositoryImpl implements SettingsRepository {
       );
       await prefs.setBool(_kEnhanceColorsKey, settings.enhanceColors);
       await prefs.setString(_kThemeModeKey, settings.themeMode.name);
-      await prefs.setString(_kTopLeftSectorKey, settings.topLeftSector.name);
-      await prefs.setString(
-        _kTopRightSectorKey,
-        settings.topRightSector.name,
-      );
-      await prefs.setString(
-        _kBottomLeftSectorKey,
-        settings.bottomLeftSector.name,
-      );
-      await prefs.setString(
-        _kBottomRightSectorKey,
-        settings.bottomRightSector.name,
-      );
+      await prefs.setBool(_kChartsAtTopKey, settings.chartsAtTop);
       // Drop the superseded legacy keys once we've saved under the new
-      // merged key, so a future load() never has stale legacy data to
-      // migrate from again.
+      // keys, so a future load() never has stale legacy data to migrate
+      // from again.
       await prefs.remove(_kLegacyShowBrightestPointKey);
       await prefs.remove(_kLegacyShowDarkestPointKey);
+      for (final key in _kLegacySectorKeys) {
+        await prefs.remove(key);
+      }
     } catch (error, stackTrace) {
       _logger.error(
         'Failed to persist settings',

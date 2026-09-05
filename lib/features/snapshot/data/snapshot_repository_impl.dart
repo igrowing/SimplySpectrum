@@ -86,21 +86,34 @@ class SnapshotRepositoryImpl implements SnapshotRepository {
 
   /// Ensures the app has permission to write to the device photo gallery.
   ///
-  /// On Android, uses `permission_handler` instead of `gal`'s built-in
-  /// permission flow. `gal` only requests `WRITE_EXTERNAL_STORAGE` alone,
-  /// which fails silently on some Android 9/10 OEM ROMs — the system
-  /// dialog appears and the user taps "Allow", but the permission is
-  /// never actually granted, so `Gal.hasAccess()` stays false forever.
-  /// `permission_handler` requests both `READ_EXTERNAL_STORAGE` and
-  /// `WRITE_EXTERNAL_STORAGE` together (when both are declared in the
-  /// manifest), which works reliably on all OEM ROMs.
+  /// `gal` saves images through `MediaStore`, which needs **no** runtime
+  /// permission on Android 10+ (API 29+) — `Gal.hasAccess()` returns true
+  /// there automatically. So we check that first and return early. This
+  /// covers every currently supported Android version (10 through 16+).
   ///
-  /// On Android 11+ (API 30+), scoped storage makes storage permissions a
-  /// no-op, so `permission_handler` returns granted automatically.
+  /// Only on Android 9 and below (API <= 28), where `gal` falls back to
+  /// legacy external storage, do we request a runtime permission — via
+  /// `permission_handler` rather than `gal`'s built-in flow, because
+  /// `gal` requests `WRITE_EXTERNAL_STORAGE` alone, which fails silently
+  /// on some OEM ROMs (the dialog appears, the user taps "Allow", but the
+  /// permission is never actually granted). `permission_handler` requests
+  /// `READ_EXTERNAL_STORAGE` + `WRITE_EXTERNAL_STORAGE` together, which
+  /// works reliably.
+  ///
+  /// NOTE: `Permission.storage` must never be requested on API 33+ — it is
+  /// deprecated there and always resolves to `denied` with no system
+  /// dialog, which previously broke snapshots on Android 13/14/15/16.
   ///
   /// On iOS, uses `gal`'s built-in permission flow (Photo Library access).
   Future<void> _ensureStorageAccess() async {
+    // Android 10+ (MediaStore) and an already-authorized iOS Photo Library
+    // both land here and return without prompting.
+    if (await Gal.hasAccess(toAlbum: true)) {
+      return;
+    }
+
     if (Platform.isAndroid) {
+      // Reached only on API <= 28 (Android 9 and below).
       final status = await ph.Permission.storage.request();
       if (!status.isGranted) {
         throw const SnapshotFailure(
@@ -110,15 +123,12 @@ class SnapshotRepositoryImpl implements SnapshotRepository {
       return;
     }
 
-    // iOS / other platforms: use gal's built-in permission flow.
-    final hasAccess = await Gal.hasAccess(toAlbum: true);
-    if (!hasAccess) {
-      final granted = await Gal.requestAccess(toAlbum: true);
-      if (!granted) {
-        throw const SnapshotFailure(
-          'Photo library access was denied, cannot save snapshot',
-        );
-      }
+    // iOS / other platforms: prompt via gal's built-in flow.
+    final granted = await Gal.requestAccess(toAlbum: true);
+    if (!granted) {
+      throw const SnapshotFailure(
+        'Photo library access was denied, cannot save snapshot',
+      );
     }
   }
 }

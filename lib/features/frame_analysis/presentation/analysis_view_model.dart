@@ -5,6 +5,7 @@ import 'package:simply_spectrum/features/camera_feed/domain/camera_repository.da
 import 'package:simply_spectrum/features/camera_feed/domain/raw_camera_frame.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analysis_result.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_analyzer.dart';
+import 'package:simply_spectrum/features/frame_analysis/domain/frame_extreme.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/frame_point.dart';
 import 'package:simply_spectrum/features/frame_analysis/domain/rgb_color.dart';
 import 'package:simply_spectrum/features/luminosity_analysis/domain/luminosity_histogram.dart';
@@ -75,7 +76,6 @@ class AnalysisViewModel extends ChangeNotifier {
   Timer? _axisRescaleTimer;
   bool _isBusy = false;
   DateTime? _lastAnalysisTime;
-  bool _hasScaledAxesOnce = false;
   AppSettings _settings = const AppSettings();
 
   SpectrumHistogram spectrum = SpectrumHistogram.empty();
@@ -96,12 +96,21 @@ class AnalysisViewModel extends ChangeNotifier {
   /// updated every [kAxisRescaleInterval] (see [_rescaleAxes]).
   int luminosityAxisMax = 1;
 
+  final _ExtremeSmoother _brightestSmoother = _ExtremeSmoother();
+  final _ExtremeSmoother _darkestSmoother = _ExtremeSmoother();
+
   /// Called whenever the Settings screen's values change, so the next
   /// analyzed frame picks up the new options.
   set settings(AppSettings settings) {
     final wasEnabled = _settings.showExtremeLightSpots;
+    final nowEnabled = settings.showExtremeLightSpots;
     _settings = settings;
-    if (wasEnabled && !settings.showExtremeLightSpots) {
+    if (wasEnabled == nowEnabled) return;
+    // Toggling the feature either way discards any smoothing state so a
+    // stale committed region can't linger into the next enable.
+    _brightestSmoother.reset();
+    _darkestSmoother.reset();
+    if (wasEnabled && !nowEnabled) {
       brightestPoint = null;
       darkestPoint = null;
       notifyListeners();
@@ -132,29 +141,55 @@ class AnalysisViewModel extends ChangeNotifier {
       luminosity = result.luminosity;
       averageColor = result.averageColor ?? averageColor;
       if (locateExtremes) {
-        brightestPoint = result.brightestPoint ?? brightestPoint;
-        darkestPoint = result.darkestPoint ?? darkestPoint;
+        _brightestSmoother.update(result.brightestRegion, bright: true);
+        _darkestSmoother.update(result.darkestRegion, bright: false);
+        brightestPoint = _brightestSmoother.displayed;
+        darkestPoint = _darkestSmoother.displayed;
       }
-      // Seed the Y-axis scale from the very first analyzed frame rather
-      // than leaving it at the placeholder value of 1 until the first
-      // `kAxisRescaleInterval` timer tick fires - otherwise both charts
-      // would show an absurdly tall, near-flat-lined polyline for up to
-      // 10 seconds after the app launches.
-      if (!_hasScaledAxesOnce) {
-        _hasScaledAxesOnce = true;
-        _rescaleAxes();
-      }
+      // Grow the Y axes immediately whenever the fresh data exceeds
+      // them (see [_growAxesIfNeeded]).
+      _growAxesIfNeeded();
       notifyListeners();
     } finally {
       _isBusy = false;
     }
   }
 
+  /// Grows each chart's Y-axis full-scale value (rounded to a nice
+  /// number) whenever the current data exceeds it. This runs on every
+  /// analyzed frame, so a sudden brightness jump - e.g. the scene
+  /// becoming well-illuminated after darkness, where real peaks can be
+  /// 100x the noise floor the axis was calibrated to - rescales the
+  /// axis within one analysis interval instead of riding the ceiling
+  /// with clipped, flat-topped peaks ("guitar-fuzz" chart) for up to
+  /// [kAxisRescaleInterval].
+  ///
+  /// Growing only (never shrinking here) keeps the axis labels stable:
+  /// the slow [_rescaleAxes] timer owns relaxing the scale back down
+  /// when the data magnitude falls.
+  void _growAxesIfNeeded() {
+    final spectrumMax = spectrum.bins.fold(0, (max, v) => v > max ? v : max);
+    final newSpectrumAxis = niceAxisMax(spectrumMax);
+    if (newSpectrumAxis > spectrumAxisMax) {
+      spectrumAxisMax = newSpectrumAxis;
+    }
+
+    final luminosityMax = luminosity.bins.fold(
+      0,
+      (max, v) => v > max ? v : max,
+    );
+    final newLuminosityAxis = niceAxisMax(luminosityMax);
+    if (newLuminosityAxis > luminosityAxisMax) {
+      luminosityAxisMax = newLuminosityAxis;
+    }
+  }
+
   /// Fired on [kAxisRescaleInterval]: recomputes each chart's Y-axis
   /// full-scale value from the current histogram, rounded to a legible
   /// "nice" number. Chart data itself keeps updating every
-  /// [kAnalysisInterval] via [_onFrame] - only the axis scale/labels are
-  /// held steady between rescales.
+  /// [kAnalysisInterval] via [_onFrame] - the axis relaxes downward
+  /// only on this timer, while growing happens immediately per frame
+  /// (see [_growAxesIfNeeded]).
   void _rescaleAxes() {
     final spectrumMax = spectrum.bins.fold(0, (max, v) => v > max ? v : max);
     final luminosityMax = luminosity.bins.fold(
@@ -172,4 +207,124 @@ class AnalysisViewModel extends ChangeNotifier {
     _axisRescaleTimer?.cancel();
     super.dispose();
   }
+}
+
+/// Confirm-before-jump + EMA smoother for one extreme-light marker.
+///
+/// [analyzeFrame] re-runs a full global search every analysis (~2 Hz) and
+/// its raw output hops between competing bright/dark regions frame to
+/// frame - which the beta testers reported as the marker "jumping like
+/// crazy". This holds a single *committed* region and:
+///
+///  * eases the marker toward the freshly detected centroid with an
+///    exponential moving average while the detection stays in that region
+///    (small, smooth corrections);
+///  * relocates to a different region only once a challenger region has
+///    persisted for [_confirmFrames] consecutive analyses, OR is
+///    dramatically more extreme than the committed one (so pointing the
+///    camera at a new bright light still snaps promptly).
+class _ExtremeSmoother {
+  /// Per-analysis fraction of the remaining distance the marker moves
+  /// toward the detected centroid while staying within the committed
+  /// region.
+  static const double _emaAlpha = 0.35;
+
+  /// Larger step used the frame a relocation to a new region is
+  /// committed - decisive but still eased rather than an instant teleport.
+  static const double _jumpAlpha = 0.6;
+
+  /// Consecutive analyses a challenger region must win before the marker
+  /// relocates to it.
+  static const int _confirmFrames = 2;
+
+  /// A challenger whose mean luma beats the committed region's by at
+  /// least this much (brighter for the bright marker, darker for the
+  /// dark one) is adopted immediately, skipping [_confirmFrames].
+  static const double _dramaticLumaDelta = 25;
+
+  /// Minimum [NormalizedRect.overlapFraction] (after inflating both by
+  /// [_matchInflate]) for two detections to count as the same region.
+  static const double _overlapToMatch = 0.25;
+
+  /// Normalized amount each region rect is grown by before overlap
+  /// testing, so a region that merely shifts by a cell still matches.
+  static const double _matchInflate = 0.03;
+
+  FramePoint? _displayed;
+  NormalizedRect? _committed;
+  double _committedMeanLuma = 0;
+  NormalizedRect? _candidate;
+  int _candidateStreak = 0;
+
+  /// The smoothed marker position to show, or null before the first
+  /// detection (or after [reset]).
+  FramePoint? get displayed => _displayed;
+
+  void reset() {
+    _displayed = null;
+    _committed = null;
+    _committedMeanLuma = 0;
+    _candidate = null;
+    _candidateStreak = 0;
+  }
+
+  void update(FrameExtreme? detection, {required bool bright}) {
+    if (detection == null) return; // Nothing detected: hold last position.
+
+    final region = detection.bounds;
+
+    if (_committed == null || _displayed == null) {
+      _commit(detection, snap: true);
+      return;
+    }
+
+    if (_sameRegion(_committed!, region)) {
+      // Same region: track its slow drift and ease the marker in.
+      _committed = NormalizedRect.lerp(_committed!, region, _emaAlpha);
+      _committedMeanLuma = detection.meanLuma;
+      _displayed = _lerpPoint(_displayed!, detection.point, _emaAlpha);
+      _candidate = null;
+      _candidateStreak = 0;
+      return;
+    }
+
+    final dramatic = bright
+        ? detection.meanLuma >= _committedMeanLuma + _dramaticLumaDelta
+        : detection.meanLuma <= _committedMeanLuma - _dramaticLumaDelta;
+    if (dramatic) {
+      _commit(detection, snap: false);
+      return;
+    }
+
+    if (_candidate != null && _sameRegion(_candidate!, region)) {
+      _candidateStreak++;
+    } else {
+      _candidate = region;
+      _candidateStreak = 1;
+    }
+    if (_candidateStreak >= _confirmFrames) {
+      _commit(detection, snap: false);
+    }
+    // Otherwise: unconfirmed challenger - leave the marker where it is.
+  }
+
+  void _commit(FrameExtreme detection, {required bool snap}) {
+    _committed = detection.bounds;
+    _committedMeanLuma = detection.meanLuma;
+    _displayed = (snap || _displayed == null)
+        ? detection.point
+        : _lerpPoint(_displayed!, detection.point, _jumpAlpha);
+    _candidate = null;
+    _candidateStreak = 0;
+  }
+
+  bool _sameRegion(NormalizedRect a, NormalizedRect b) =>
+      a.inflated(_matchInflate).overlapFraction(b.inflated(_matchInflate)) >=
+      _overlapToMatch;
+
+  FramePoint _lerpPoint(FramePoint a, FramePoint b, double t) => FramePoint(
+    normalizedX: a.normalizedX + (b.normalizedX - a.normalizedX) * t,
+    normalizedY: a.normalizedY + (b.normalizedY - a.normalizedY) * t,
+    luma: (a.luma + (b.luma - a.luma) * t).round(),
+  );
 }

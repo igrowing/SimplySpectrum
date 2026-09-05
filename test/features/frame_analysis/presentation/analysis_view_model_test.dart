@@ -47,12 +47,17 @@ class _FakeCameraRepository implements CameraRepository {
   }
 }
 
-RawCameraFrame _uniformFrame({required int y, required int u, required int v}) {
-  const width = 16;
-  const height = 16;
+RawCameraFrame _uniformFrame({
+  required int y,
+  required int u,
+  required int v,
+  int dimension = 16,
+}) {
+  final width = dimension;
+  final height = dimension;
   final yPlane = Uint8List(width * height)..fillRange(0, width * height, y);
-  const chromaWidth = width ~/ 2;
-  const chromaHeight = height ~/ 2;
+  final chromaWidth = width ~/ 2;
+  final chromaHeight = height ~/ 2;
   final uPlane = Uint8List(chromaWidth * chromaHeight)
     ..fillRange(0, chromaWidth * chromaHeight, u);
   final vPlane = Uint8List(chromaWidth * chromaHeight)
@@ -66,6 +71,41 @@ RawCameraFrame _uniformFrame({required int y, required int u, required int v}) {
       RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
       RawFramePlane(bytes: uPlane, bytesPerRow: chromaWidth, pixelStride: 1),
       RawFramePlane(bytes: vPlane, bytesPerRow: chromaWidth, pixelStride: 1),
+    ],
+  );
+}
+
+/// A 96x96 grey frame with one [value]-luma block at
+/// `[x0, y0] .. [x0 + size, y0 + size)`.
+RawCameraFrame _blockFrame({
+  required int x0,
+  required int y0,
+  int size = 24,
+  int value = 220,
+  int background = 110,
+}) {
+  const width = 96;
+  const height = 96;
+  final yPlane = Uint8List(width * height)
+    ..fillRange(0, width * height, background);
+  for (var y = y0; y < y0 + size; y++) {
+    for (var x = x0; x < x0 + size; x++) {
+      yPlane[y * width + x] = value;
+    }
+  }
+  const chromaWidth = width ~/ 2;
+  const chromaHeight = height ~/ 2;
+  final neutral = Uint8List(chromaWidth * chromaHeight)
+    ..fillRange(0, chromaWidth * chromaHeight, 128);
+
+  return RawCameraFrame(
+    width: width,
+    height: height,
+    format: RawFrameFormat.yuv420,
+    planes: [
+      RawFramePlane(bytes: yPlane, bytesPerRow: width, pixelStride: 1),
+      RawFramePlane(bytes: neutral, bytesPerRow: chromaWidth, pixelStride: 1),
+      RawFramePlane(bytes: neutral, bytesPerRow: chromaWidth, pixelStride: 1),
     ],
   );
 }
@@ -109,9 +149,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
 
       // Only the first frame in the window should have been analyzed:
-      // one notify for the data itself, plus one for the first-frame
-      // axis seeding (see AnalysisViewModel._onFrame) - not 5.
-      expect(notifyCount, 2);
+      // one notify per analyzed frame, carrying both the data and any
+      // same-frame axis growth (see AnalysisViewModel._onFrame) - not 5.
+      expect(notifyCount, 1);
     });
 
     test(
@@ -153,6 +193,42 @@ void main() {
     );
 
     test(
+      'grows the Y axis immediately when a frame exceeds it, and never '
+      'shrinks it per frame (dark-to-bright regression)',
+      () async {
+        final camera = _FakeCameraRepository();
+        final viewModel = AnalysisViewModel(
+          cameraRepository: camera,
+          analysisInterval: const Duration(milliseconds: 20),
+          axisRescaleInterval: const Duration(seconds: 30),
+        );
+        addTearDown(viewModel.dispose);
+
+        // "Dark" start: a tiny frame with very few samples seeds a
+        // small axis.
+        camera.emit(_uniformFrame(y: 200, u: 128, v: 128, dimension: 16));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        final smallAxis = viewModel.luminosityAxisMax;
+        expect(smallAxis, greaterThan(1));
+
+        // The scene becomes illuminated: the next frame has ~9x the
+        // samples, so its tallest bin far exceeds the seeded axis. The
+        // axis must grow within one analysis interval - not wait for
+        // the (30s here) rescale timer - or the chart rides the
+        // ceiling with clipped, flat-topped peaks.
+        camera.emit(_uniformFrame(y: 200, u: 128, v: 128, dimension: 96));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(viewModel.luminosityAxisMax, greaterThan(smallAxis));
+
+        // Back to the small frame: the axis must NOT shrink per frame
+        // (label stability) - only the rescale timer may relax it.
+        camera.emit(_uniformFrame(y: 200, u: 128, v: 128, dimension: 16));
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(viewModel.luminosityAxisMax, greaterThan(smallAxis));
+      },
+    );
+
+    test(
       'clears extreme-light points when the setting is turned off',
       () async {
         final camera = _FakeCameraRepository();
@@ -170,6 +246,46 @@ void main() {
 
         expect(viewModel.brightestPoint, isNull);
         expect(viewModel.darkestPoint, isNull);
+      },
+    );
+
+    test(
+      'holds the brightest marker put until a challenger region is '
+      'confirmed over consecutive analyses',
+      () async {
+        final camera = _FakeCameraRepository();
+        final viewModel = AnalysisViewModel(
+          cameraRepository: camera,
+          analysisInterval: const Duration(milliseconds: 20),
+        );
+        addTearDown(viewModel.dispose);
+        viewModel.settings = const AppSettings(showExtremeLightSpots: true);
+
+        Future<void> analyze(RawCameraFrame frame) async {
+          camera.emit(frame);
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        }
+
+        // Lock onto a bright region in the top-left quadrant.
+        final topLeft = _blockFrame(x0: 14, y0: 14);
+        await analyze(topLeft);
+        await analyze(topLeft);
+        final locked = viewModel.brightestPoint!;
+        expect(locked.normalizedX, lessThan(0.5));
+        expect(locked.normalizedY, lessThan(0.5));
+
+        // A single frame with an equally-bright region in the opposite
+        // corner must NOT move the marker (unconfirmed challenger).
+        final bottomRight = _blockFrame(x0: 58, y0: 58);
+        await analyze(bottomRight);
+        expect(viewModel.brightestPoint!.normalizedX, lessThan(0.5));
+        expect(viewModel.brightestPoint!.normalizedY, lessThan(0.5));
+
+        // Once it persists for a second analysis the marker relocates.
+        await analyze(bottomRight);
+        await analyze(bottomRight);
+        expect(viewModel.brightestPoint!.normalizedX, greaterThan(0.5));
+        expect(viewModel.brightestPoint!.normalizedY, greaterThan(0.5));
       },
     );
   });

@@ -31,10 +31,7 @@ void main() {
         spectrumUnit: SpectrumUnit.frequencyHz,
         showExtremeLightSpots: true,
         enhanceColors: true,
-        topLeftSector: SectorWidgetType.controls,
-        topRightSector: SectorWidgetType.luminosityChart,
-        bottomLeftSector: SectorWidgetType.colorChart,
-        bottomRightSector: SectorWidgetType.camera,
+        chartsAtTop: false,
       );
 
       await repository.save(settings);
@@ -43,29 +40,35 @@ void main() {
       expect(reloaded, settings);
     });
 
-    test(
-      'load() falls back to the default sector layout when the persisted '
-      'layout is corrupt (e.g. a duplicated widget)',
-      () async {
-        SharedPreferences.setMockInitialValues({
-          'settings.sector_top_left': SectorWidgetType.camera.name,
-          'settings.sector_top_right': SectorWidgetType.camera.name,
-          'settings.sector_bottom_left': SectorWidgetType.luminosityChart.name,
-          'settings.sector_bottom_right': SectorWidgetType.controls.name,
-        });
-        final repository = SettingsRepositoryImpl(
-          logger: const DeveloperAppLogger(),
-        );
+    test('load() reads a persisted chartsAtTop=false', () async {
+      SharedPreferences.setMockInitialValues({
+        'settings.charts_at_top': false,
+      });
+      final repository = SettingsRepositoryImpl(
+        logger: const DeveloperAppLogger(),
+      );
 
-        final settings = await repository.load();
+      final settings = await repository.load();
 
-        const defaults = AppSettings();
-        expect(settings.topLeftSector, defaults.topLeftSector);
-        expect(settings.topRightSector, defaults.topRightSector);
-        expect(settings.bottomLeftSector, defaults.bottomLeftSector);
-        expect(settings.bottomRightSector, defaults.bottomRightSector);
-      },
-    );
+      expect(settings.chartsAtTop, isFalse);
+    });
+
+    test('save() removes the retired legacy sector-layout keys', () async {
+      SharedPreferences.setMockInitialValues({
+        'settings.sector_top_left': 'camera',
+        'settings.sector_bottom_right': 'controls',
+      });
+      final repository = SettingsRepositoryImpl(
+        logger: const DeveloperAppLogger(),
+      );
+
+      await repository.save(const AppSettings());
+      final stored = await SharedPreferences.getInstance();
+
+      expect(stored.containsKey('settings.sector_top_left'), isFalse);
+      expect(stored.containsKey('settings.sector_bottom_right'), isFalse);
+      expect(stored.getBool('settings.charts_at_top'), isTrue);
+    });
 
     test(
       'load() falls back to the default theme when the persisted name is '
