@@ -175,10 +175,12 @@ class _ThemeModeSetting extends StatelessWidget {
   }
 }
 
-/// The "Charts placement" setting: a Top/Bottom segmented toggle that
-/// decides which half of the main screen the combined chart occupies
-/// (top/bottom in the vertical layout, left/right in the horizontal
-/// one); the camera + controls take the other half.
+/// The "Charts placement" setting: a segmented toggle that decides which
+/// half of the main screen the combined chart occupies; the camera +
+/// controls take the other half. The two choices are labelled to match
+/// how the halves actually stack right now - Top/Bottom while the device
+/// is portrait, Left/Right while it's landscape - so the words track
+/// what the user sees on the main screen.
 class _ChartsPlacementSetting extends StatelessWidget {
   const _ChartsPlacementSetting({
     required this.value,
@@ -194,6 +196,20 @@ class _ChartsPlacementSetting extends StatelessWidget {
       context,
     ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor);
 
+    // The main screen splits into left/right halves in landscape and
+    // top/bottom halves in portrait, so label this toggle to match
+    // whichever the user is currently looking at.
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final firstLabel = isLandscape ? 'Left' : 'Top';
+    final secondLabel = isLandscape ? 'Right' : 'Bottom';
+    final firstIcon = isLandscape
+        ? Icons.align_horizontal_left
+        : Icons.vertical_align_top;
+    final secondIcon = isLandscape
+        ? Icons.align_horizontal_right
+        : Icons.vertical_align_bottom;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(
@@ -207,21 +223,22 @@ class _ChartsPlacementSetting extends StatelessWidget {
           Text(
             'Which half of the screen shows the charts. The camera and '
             'controls take the other half (left/right instead of '
-            'top/bottom in landscape).',
+            'top/bottom in landscape). In landscape, putting the charts '
+            'on the right moves the controls to a left-handed grip.',
             style: subtitleStyle,
           ),
           const SizedBox(height: 12),
           SegmentedButton<bool>(
-            segments: const [
+            segments: [
               ButtonSegment(
                 value: true,
-                label: Text('Top'),
-                icon: Icon(Icons.vertical_align_top),
+                label: Text(firstLabel),
+                icon: Icon(firstIcon),
               ),
               ButtonSegment(
                 value: false,
-                label: Text('Bottom'),
-                icon: Icon(Icons.vertical_align_bottom),
+                label: Text(secondLabel),
+                icon: Icon(secondIcon),
               ),
             ],
             selected: {value},

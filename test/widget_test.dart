@@ -58,14 +58,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(viewModel.settings.themeMode, AppThemeMode.dark);
 
-    // The "Charts placement" segmented toggle defaults to Top, and
-    // switching it to Bottom updates the persisted setting.
+    // The "Charts placement" segmented toggle defaults to charts-first
+    // (chartsAtTop == true). Its labels track the current orientation:
+    // the default test surface is landscape, so they read Left/Right.
     expect(find.text('Charts placement'), findsOneWidget);
     expect(viewModel.settings.chartsAtTop, isTrue);
+    expect(find.text('Left'), findsOneWidget);
+    expect(find.text('Right'), findsOneWidget);
+    expect(find.text('Top'), findsNothing);
 
-    await tester.tap(find.text('Bottom'));
+    await tester.tap(find.text('Right'));
     await tester.pumpAndSettle();
     expect(viewModel.settings.chartsAtTop, isFalse);
+
+    // In portrait the same toggle relabels to Top/Bottom.
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpAndSettle();
+    expect(find.text('Top'), findsOneWidget);
+    expect(find.text('Bottom'), findsOneWidget);
+    expect(find.text('Left'), findsNothing);
 
     // Scroll down to reach the footer at the bottom of the list, which
     // is now off the default viewport with the new section above it.

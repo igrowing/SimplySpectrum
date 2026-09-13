@@ -23,7 +23,11 @@ import 'package:simply_spectrum/features/snapshot/domain/snapshot_repository.dar
 /// [AppSettings.chartsAtTop]) and camera + controls share the other
 /// half, stacked. In the horizontal layout the chart takes the left
 /// half (or right half, same setting) and camera + controls share the
-/// other half. Sizing is purely constraint-driven ([LayoutBuilder]),
+/// other half, with camera always on top and controls always on the
+/// bottom - only the Controls sector's own internal layout mirrors when
+/// the chart is on the right, so that setting is a true left/right
+/// mirror rather than a different composition. Sizing is purely
+/// constraint-driven ([LayoutBuilder]),
 /// per project rules - the "vertical/horizontal" choice follows the
 /// incoming box's own aspect ratio, not raw screen queries.
 class HomePage extends StatefulWidget {
@@ -63,12 +67,20 @@ class _HomePageState extends State<HomePage> {
   /// sectors end up tall/narrow "vertical" ones) and stacked in the
   /// horizontal layout (camera above controls - the half is tall, so
   /// the sectors end up short/wide "horizontal" ones).
+  ///
+  /// The Camera sector is always on top and the Controls sector always
+  /// on the bottom in the horizontal layout, regardless of which side
+  /// the charts are on - only the Controls sector's *internal* layout
+  /// mirrors (see [ControlsSectorWidget.mirrored]) so the "Charts
+  /// placement: right" setting is a functional left/right mirror of the
+  /// default rather than a different composition.
   Widget _buildCameraAndControls({
     required CameraViewModel camera,
     required AppSettings settings,
     required AnalysisViewModel analysis,
     required VoidCallback onSnapshot,
     required bool isVertical,
+    required bool chartsFirst,
   }) {
     final cameraView = Expanded(
       flex: 3,
@@ -86,6 +98,10 @@ class _HomePageState extends State<HomePage> {
         viewModel: camera,
         onSnapshot: onSnapshot,
         averageColor: analysis.averageColor,
+        // Only meaningful once this half is on the *left* (charts on
+        // the right) of the horizontal layout - the vertical layout
+        // ignores it (see ControlsSectorWidget).
+        mirrored: !isVertical && !chartsFirst,
       ),
     );
 
@@ -160,6 +176,10 @@ class _HomePageState extends State<HomePage> {
                   final settings = settingsViewModel.settings;
                   analysis.settings = settings;
 
+                  // "Charts placement" setting: charts on top (or on
+                  // the left, in horizontal) vs bottom/right.
+                  final chartsFirst = settings.chartsAtTop;
+
                   final charts = _buildCharts(
                     settings: settings,
                     analysis: analysis,
@@ -170,11 +190,8 @@ class _HomePageState extends State<HomePage> {
                     analysis: analysis,
                     onSnapshot: () => _handleSnapshot(context),
                     isVertical: isVertical,
+                    chartsFirst: chartsFirst,
                   );
-
-                  // "Charts placement" setting: charts on top (or on
-                  // the left, in horizontal) vs bottom/right.
-                  final chartsFirst = settings.chartsAtTop;
 
                   if (isVertical) {
                     return Column(

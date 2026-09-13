@@ -10,6 +10,7 @@ import 'package:simply_spectrum/core/logging/app_logger.dart';
 import 'package:simply_spectrum/features/camera_feed/data/camera_repository_impl.dart';
 import 'package:simply_spectrum/features/camera_feed/domain/camera_repository.dart';
 import 'package:simply_spectrum/features/camera_feed/presentation/camera_view_model.dart';
+import 'package:simply_spectrum/features/camera_feed/presentation/screen_wake_view_model.dart';
 import 'package:simply_spectrum/features/frame_analysis/presentation/analysis_view_model.dart';
 import 'package:simply_spectrum/features/settings/domain/app_settings.dart';
 import 'package:simply_spectrum/features/settings/domain/settings_repository.dart';
@@ -48,6 +49,9 @@ class SimplySpectrumApp extends StatelessWidget {
             cameraRepository: sl<CameraRepositoryImpl>(),
             logger: sl<AppLogger>(),
           ),
+        ),
+        ChangeNotifierProvider<ScreenWakeViewModel>(
+          create: (_) => ScreenWakeViewModel(),
         ),
         ChangeNotifierProvider<SettingsViewModel>(
           create: (_) => SettingsViewModel(
