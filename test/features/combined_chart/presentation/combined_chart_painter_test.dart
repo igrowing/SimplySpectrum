@@ -159,6 +159,19 @@ void main() {
       },
     );
 
+    test(
+      'spectrumTicks() in frequency mode returns non-empty ticks '
+      '(regression: THz axis was blank because the Hz range passed to '
+      'the shared tick generator was descending, not ascending)',
+      () {
+        final freq = painter(unit: SpectrumUnit.frequencyHz);
+        final nm = painter();
+
+        expect(nm.spectrumTicks(), isNotEmpty);
+        expect(freq.spectrumTicks(), isNotEmpty);
+      },
+    );
+
     test('shouldRepaint reacts to viewport changes', () {
       final a = painter();
       final b = painter(
