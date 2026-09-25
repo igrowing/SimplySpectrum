@@ -46,8 +46,12 @@ class AppSettings extends Equatable {
   /// Whether the combined chart occupies the top half of the screen
   /// (vertical layout) or the left half (horizontal layout). When
   /// false, the charts move to the bottom (vertical) / right
-  /// (horizontal) half, and the camera + controls take the other.
-  /// Default: true (charts on top).
+  /// (horizontal) half, and the camera + controls take the other. In
+  /// the horizontal layout, `false` also mirrors the Controls sector's
+  /// internal layout (average-color band toward the charts, buttons
+  /// toward the outer edge) so the whole arrangement reads as a true
+  /// left/right mirror rather than a different composition. Default:
+  /// true (charts on top).
   final bool chartsAtTop;
 
   AppSettings copyWith({

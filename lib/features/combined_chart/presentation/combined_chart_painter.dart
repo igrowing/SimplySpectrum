@@ -239,7 +239,7 @@ class CombinedChartPainter extends CustomPainter {
       ..strokeWidth = 1;
 
     // Vertical grid + X tick labels for the spectrum domain.
-    final spectrumTicks = _spectrumTicks();
+    final spectrumTicks = this.spectrumTicks();
     for (final tick in spectrumTicks) {
       final x = sx(tick.fraction);
       if (x < plotRect.left || x > plotRect.right) continue;
@@ -326,8 +326,10 @@ class CombinedChartPainter extends CustomPainter {
   }
 
   /// Generates ticks for the spectrum X domain (nm or Hz depending on
-  /// [unit]) for the currently visible window.
-  List<ChartTick> _spectrumTicks() {
+  /// [unit]) for the currently visible window. Public so tick
+  /// generation - notably frequency-mode tick placement - is
+  /// unit-testable.
+  List<ChartTick> spectrumTicks() {
     if (unit == SpectrumUnit.wavelengthNm) {
       final from = kMinVisibleWavelengthNm + viewport.left * 300;
       final to =
@@ -341,12 +343,20 @@ class CombinedChartPainter extends CustomPainter {
           ),
       ];
     }
-    final from =
+    // Hz decreases left-to-right (violet/high-Hz on the left, see
+    // hzXFraction), so the Hz value at the viewport's right edge is
+    // *lower* than at its left edge - i.e. descending, not ascending.
+    // _valueTicks() requires an ascending [from, to] (it bails out to
+    // an empty list otherwise, via its `to <= from` guard), so the
+    // edges are passed to it low-to-high here regardless of which
+    // screen side each one is on; hzXFraction() below maps each tick's
+    // Hz value back to the correct on-screen side independently.
+    final leftEdgeHz =
         _kMaxVisibleHz - viewport.left * (_kMaxVisibleHz - _kMinVisibleHz);
-    final to =
+    final rightEdgeHz =
         _kMaxVisibleHz -
         (viewport.left + viewport.width) * (_kMaxVisibleHz - _kMinVisibleHz);
-    final ticks = _valueTicks(from, to, targetCount: 6);
+    final ticks = _valueTicks(rightEdgeHz, leftEdgeHz, targetCount: 6);
     return [
       for (final t in ticks)
         (
