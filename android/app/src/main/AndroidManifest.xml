@@ -10,13 +10,19 @@
          scoped storage makes these permissions a no-op. `maxSdkVersion=29`
          matches the gal plugin's own `USE_EXTERNAL_STORAGE = SDK_INT <= 29`
          cutoff for its legacy-storage code path. READ_EXTERNAL_STORAGE
-         has no cap because `permission_handler` still references it. -->
+         has no cap because `permission_handler` still references it.
+
+         NO READ_MEDIA_IMAGES / READ_MEDIA_VIDEO here, ever: this app
+         never READS photos or videos - it only SAVES snapshots via
+         `gal`, which goes through MediaStore and needs no permission
+         on Android 10+ (API 29+). Declaring READ_MEDIA_* on an app
+         that never reads user media violates Google Play's Photo and
+         Video Permissions policy. -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"
         tools:replace="android:maxSdkVersion" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="true"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>
